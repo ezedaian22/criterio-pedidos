@@ -151,6 +151,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
           foto_url: art.foto_url,
           precio_unitario: art.precio_unitario,
           total_unidades: art.total_unidades,
+          curva_talles: art.curva_talles || null,
           estado: 'pendiente',
         })
         .select()
