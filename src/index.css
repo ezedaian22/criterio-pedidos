@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface text-white min-h-screen;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1a1d27;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a2d3e;
+    border-radius: 3px;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-brand-500 hover:bg-brand-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-card border border-border hover:border-brand-500 text-white font-medium px-4 py-2 rounded-lg transition-colors;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors;
+  }
+
+  .card {
+    @apply bg-card border border-border rounded-xl p-4;
+  }
+
+  .input {
+    @apply bg-surface border border-border rounded-lg px-3 py-2 text-white placeholder-muted focus:outline-none focus:border-brand-500 w-full transition-colors;
+  }
+
+  .badge-pendiente {
+    @apply bg-gray-700 text-gray-300 text-xs font-semibold px-2 py-0.5 rounded-full;
+  }
+
+  .badge-separado {
+    @apply bg-blue-900 text-blue-300 text-xs font-semibold px-2 py-0.5 rounded-full;
+  }
+
+  .badge-guardado {
+    @apply bg-yellow-900 text-yellow-300 text-xs font-semibold px-2 py-0.5 rounded-full;
+  }
+
+  .badge-finalizado {
+    @apply bg-green-900 text-green-300 text-xs font-semibold px-2 py-0.5 rounded-full;
+  }
+
+  .alerta-vencido {
+    @apply bg-red-950 border border-red-700 text-red-300;
+  }
+
+  .alerta-proximo {
+    @apply bg-yellow-950 border border-yellow-700 text-yellow-300;
+  }
+
+  .num {
+    font-family: 'Archivo Black', sans-serif;
+  }
+}
