@@ -7,9 +7,22 @@ import NuevoPedido from './pages/NuevoPedido'
 import DetallePedido from './pages/DetallePedido'
 import Ajustes from './pages/Ajustes'
 
+const headerStyle = {
+  background: 'linear-gradient(135deg, #1a1d27 0%, #1e2236 100%)',
+  borderBottom: '2px solid #3b5bdb',
+  padding: '0.875rem 1.25rem',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  position: 'sticky',
+  top: 0,
+  zIndex: 50,
+  boxShadow: '0 2px 20px rgba(59,91,219,0.2)'
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
-  const [pagina, setPagina] = useState('dashboard') // dashboard | nuevo | detalle | ajustes
+  const [pagina, setPagina] = useState('dashboard')
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null)
 
   useEffect(() => {
@@ -26,23 +39,29 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div style={{ minHeight: '100vh', backgroundColor: '#0f1117' }}>
       {/* Header */}
-      <header className="border-b border-border bg-card px-4 py-3 flex items-center justify-between sticky top-0 z-50">
-        <button onClick={() => irA('dashboard')} className="flex items-center gap-2">
-          <span className="font-display text-lg text-white tracking-tight">CRITERIO</span>
-          <span className="text-brand-500 font-display text-lg">PEDIDOS</span>
+      <header style={headerStyle}>
+        <button
+          onClick={() => irA('dashboard')}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer' }}
+        >
+          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.25rem', color: 'white', letterSpacing: '-0.025em' }}>CRITERIO</span>
+          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.25rem', color: '#6b8fff', letterSpacing: '-0.025em' }}>PEDIDOS</span>
         </button>
-        <div className="flex items-center gap-3">
-          <span className="text-muted text-sm">{session.nombre}</span>
-          <button onClick={() => irA('ajustes')} className="text-muted hover:text-white transition-colors text-sm">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ color: '#c8d0e0', fontSize: '0.875rem', fontWeight: 600 }}>{session.nombre}</span>
+          <button
+            onClick={() => irA('ajustes')}
+            style={{ color: '#c8d0e0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem' }}
+          >
             ⚙
           </button>
         </div>
       </header>
 
       {/* Contenido */}
-      <main className="max-w-5xl mx-auto px-4 py-6">
+      <main style={{ maxWidth: '64rem', margin: '0 auto', padding: '1.5rem 1rem' }}>
         {pagina === 'dashboard' && (
           <Dashboard
             session={session}
