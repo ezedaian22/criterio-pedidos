@@ -1,14 +1,29 @@
 export async function parsearArchivoPedido(archivo, clienteNombre) {
   var apiKey = localStorage.getItem('criterio_anthropic_key')
-  if (!apiKey) throw new Error('Falta la API Key de Anthropic. Configurala en Ajustes.')
+  if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
 
   var base64 = await fileToBase64(archivo)
   var mimeType = getMimeType(archivo)
 
-  var prompt = 'Analiza este archivo de pedido del cliente "' + clienteNombre + '" y extrae la informacion. ' +
-    'Devuelve SOLO JSON sin backticks: { "numero_pedido": "string o null", "fecha_pedido": "YYYY-MM-DD o null", "fecha_entrega": "YYYY-MM-DD", "articulos": [ { "codigo_nuestro": "string", "codigo_cliente": "string o null", "descripcion_cliente": "string", "precio_unitario": 0, "variantes": [], "sucursales": [ { "nro_sucursal": "string", "cantidad": 0 } ], "modulos": [], "total_unidades": 0 } ] } ' +
-    'Para Balbi sucursales 1 al 23. Para Garcia Reguera sucursales 01 04 06 10 11 13 14. Para Sucati/Chandal sucursales 0 al 23 la 0 es entrega final. ' +
-    'codigo_nuestro es el codigo de Lavalle. Sucati talles: 3=4, 4=6, 5=8, 6=10, 7=12.'
+  var infoSucursales = ''
+  var nombreLower = archivo.name.toLowerCase()
+  if (nombreLower.includes('_bb') || nombreLower.includes('balbi') || clienteNombre === 'Balbi') {
+    infoSucursales = 'Cliente BALBI: sucursales del 1 al 23 (empresa Hijos: suc 1-17, empresa Retail: suc 18-23).'
+  } else if (nombreLower.includes('_gr') || nombreLower.includes('garcia') || nombreLower.includes('reguera') || clienteNombre === 'García Reguera') {
+    infoSucursales = 'Cliente GARCIA REGUERA: sucursales 01, 04, 06, 10, 11, 13, 14.'
+  } else if (nombreLower.includes('_suc') || nombreLower.includes('sucati') || nombreLower.includes('chandal') || clienteNombre === 'Sucati') {
+    infoSucursales = 'Cliente SUCATI/CHANDAL: sucursales del 0 al 23. La sucursal 0 es entrega final. Talles: 3=4, 4=6, 5=8, 6=10, 7=12.'
+  } else {
+    infoSucursales = 'Detecta las sucursales del archivo.'
+  }
+
+  var prompt = 'Analiza este archivo de pedido y extrae TODA la informacion de distribucion por sucursal. ' +
+    infoSucursales + ' ' +
+    'El codigo_nuestro es el codigo interno de Lavalle Comercial (el numero que aparece como codigo del proveedor). ' +
+    'codigo_cliente es el codigo que usa el cliente si es diferente. ' +
+    'sucursales es la lista completa de sucursales con su cantidad de unidades de ese articulo. ' +
+    'Devuelve UNICAMENTE este JSON, sin ningun texto antes ni despues, sin backticks: ' +
+    '{"numero_pedido":"string o null","fecha_pedido":"YYYY-MM-DD o null","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string o null","descripcion_cliente":"string","precio_unitario":0,"variantes":[],"sucursales":[{"nro_sucursal":"string","cantidad":0}],"modulos":[],"total_unidades":0}]}'
 
   var response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -20,7 +35,7 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
+      max_tokens: 8000,
       messages: [{
         role: 'user',
         content: [
@@ -40,13 +55,16 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
   var bloque = data.content && data.content.find(function(b) { return b.type === 'text' })
   var texto = bloque ? bloque.text : ''
 
-  if (!texto) throw new Error('Sin respuesta de la IA. Intenta de nuevo.')
+  if (!texto) throw new Error('Sin respuesta de la IA.')
+
+  var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
+  var jsonMatch = clean.match(/\{[\s\S]*\}/)
+  if (jsonMatch) clean = jsonMatch[0]
 
   try {
-    var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
     return JSON.parse(clean)
   } catch(e) {
-    throw new Error('No se pudo interpretar la respuesta. Intenta de nuevo.')
+    throw new Error('Respuesta IA (debug): ' + texto.slice(0, 500))
   }
 }
 
