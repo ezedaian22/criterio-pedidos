@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { supabase, supabaseCostos } from '../lib/supabase'
 import { parsearArchivoPedido } from '../lib/parsearPedido'
