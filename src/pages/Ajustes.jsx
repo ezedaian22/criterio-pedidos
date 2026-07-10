@@ -2,11 +2,11 @@ import React from 'react'
 import { useState } from 'react'
 
 export default function Ajustes({ session, onVolver, onLogout }) {
-  const [apiKey, setApiKey] = useState(localStorage.getItem('criterio_gemini_key') || '')
+  const [apiKey, setApiKey] = useState(localStorage.getItem('criterio_anthropic_key') || '')
   const [guardado, setGuardado] = useState(false)
 
   function guardarKey() {
-    localStorage.setItem('criterio_gemini_key', apiKey.trim())
+    localStorage.setItem('criterio_anthropic_key', apiKey.trim())
     setGuardado(true)
     setTimeout(() => setGuardado(false), 2000)
   }
@@ -19,8 +19,8 @@ export default function Ajustes({ session, onVolver, onLogout }) {
       </div>
 
       <div className="card space-y-3">
-        <h2 className="font-semibold">API Key</h2>
-        <p className="text-sm text-muted">Clave para interpretar archivos de pedidos con IA (Anthropic).</p>
+        <h2 className="font-semibold">API Key de Anthropic</h2>
+        <p className="text-sm text-muted">Necesaria para interpretar los archivos de pedidos con IA.</p>
         <input
           type="password"
           className="input font-mono text-sm"
@@ -36,9 +36,7 @@ export default function Ajustes({ session, onVolver, onLogout }) {
       <div className="card space-y-2">
         <h2 className="font-semibold">Sesión</h2>
         <p className="text-sm text-muted">Usuario: <span className="text-white">{session.nombre}</span></p>
-        <button className="btn-danger text-sm" onClick={onLogout}>
-          Cerrar sesión
-        </button>
+        <button className="btn-danger text-sm" onClick={onLogout}>Cerrar sesión</button>
       </div>
 
       <div className="text-center text-muted text-xs pt-4">
