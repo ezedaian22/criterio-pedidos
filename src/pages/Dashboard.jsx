@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { alertaFecha, formatFecha, pct } from '../lib/utils'
