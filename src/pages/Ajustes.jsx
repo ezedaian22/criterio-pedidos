@@ -14,17 +14,17 @@ export default function Ajustes({ session, onVolver, onLogout }) {
   return (
     <div className="space-y-6 max-w-lg mx-auto">
       <div className="flex items-center gap-3">
-        <button onClick={onVolver} className="text-muted hover:text-white">← Volver</button>
+        <button onClick={onVolver} style={{ color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>← Volver</button>
         <h1 className="text-xl font-bold">Ajustes</h1>
       </div>
 
       <div className="card space-y-3">
-        <h2 className="font-semibold">API Key de Gemini</h2>
-        <p className="text-sm text-muted">Necesaria para interpretar los archivos de pedidos con IA.</p>
+        <h2 className="font-semibold">API Key</h2>
+        <p className="text-sm text-muted">Clave para interpretar archivos de pedidos con IA (Anthropic).</p>
         <input
           type="password"
           className="input font-mono text-sm"
-          placeholder="AQ.Ab8RN6..."
+          placeholder="sk-ant-..."
           value={apiKey}
           onChange={e => setApiKey(e.target.value)}
         />
