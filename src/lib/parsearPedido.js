@@ -5,24 +5,15 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
   var base64 = await fileToBase64(archivo)
   var mimeType = getMimeType(archivo)
 
-  var infoSucursales = ''
-  var nombreLower = archivo.name.toLowerCase()
-  if (nombreLower.includes('_bb') || nombreLower.includes('balbi') || clienteNombre === 'Balbi') {
-    infoSucursales = 'Cliente BALBI: sucursales del 1 al 23 (empresa Hijos: suc 1-17, empresa Retail: suc 18-23).'
-  } else if (nombreLower.includes('_gr') || nombreLower.includes('garcia') || nombreLower.includes('reguera') || clienteNombre === 'García Reguera') {
-    infoSucursales = 'Cliente GARCIA REGUERA: sucursales 01, 04, 06, 10, 11, 13, 14.'
-  } else if (nombreLower.includes('_suc') || nombreLower.includes('sucati') || nombreLower.includes('chandal') || clienteNombre === 'Sucati') {
-    infoSucursales = 'Cliente SUCATI/CHANDAL: sucursales del 0 al 23. La sucursal 0 es entrega final. Talles: 3=4, 4=6, 5=8, 6=10, 7=12.'
-  } else {
-    infoSucursales = 'Detecta las sucursales del archivo.'
-  }
-
-  var prompt = 'Analiza este archivo de pedido y extrae TODA la informacion de distribucion por sucursal. ' +
-    infoSucursales + ' ' +
-    'El codigo_nuestro es el codigo interno de Lavalle Comercial (el numero que aparece como codigo del proveedor). ' +
-    'codigo_cliente es el codigo que usa el cliente si es diferente. ' +
-    'sucursales es la lista completa de sucursales con su cantidad de unidades de ese articulo. ' +
-    'Devuelve UNICAMENTE este JSON, sin ningun texto antes ni despues, sin backticks: ' +
+  var prompt = 'Sos un asistente que extrae datos de pedidos de indumentaria para Lavalle Comercial. ' +
+    'Analizá el archivo adjunto que es un pedido de un cliente. ' +
+    'Primero identificá el cliente leyendo el encabezado del documento (puede ser Garcia Reguera, Balbi, Sucati o Chandal). ' +
+    'Luego extraé TODA la distribución por sucursal de cada artículo. ' +
+    'El codigo_nuestro es el código del proveedor (Lavalle), codigo_cliente es el código del cliente. ' +
+    'Para Garcia Reguera las sucursales están en la tabla de distribución al pie del documento. ' +
+    'Para Balbi las sucursales son columnas numeradas en el PDF. ' +
+    'Para Sucati/Chandal los talles equivalen: 3=4, 4=6, 5=8, 6=10, 7=12. ' +
+    'Respondé ÚNICAMENTE con JSON válido, sin texto antes ni después, sin backticks. Formato exacto: ' +
     '{"numero_pedido":"string o null","fecha_pedido":"YYYY-MM-DD o null","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string o null","descripcion_cliente":"string","precio_unitario":0,"variantes":[],"sucursales":[{"nro_sucursal":"string","cantidad":0}],"modulos":[],"total_unidades":0}]}'
 
   var response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -36,13 +27,19 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'document', source: { type: 'base64', media_type: mimeType, data: base64 } },
-          { type: 'text', text: prompt }
-        ]
-      }]
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: mimeType, data: base64 } },
+            { type: 'text', text: prompt }
+          ]
+        },
+        {
+          role: 'assistant',
+          content: '{'
+        }
+      ]
     })
   })
 
@@ -57,14 +54,15 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
 
   if (!texto) throw new Error('Sin respuesta de la IA.')
 
-  var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
-  var jsonMatch = clean.match(/\{[\s\S]*\}/)
-  if (jsonMatch) clean = jsonMatch[0]
+  // El modelo continúa desde "{" así que agregamos la llave de apertura
+  var jsonStr = '{' + texto
+  var jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+  if (jsonMatch) jsonStr = jsonMatch[0]
 
   try {
-    return JSON.parse(clean)
+    return JSON.parse(jsonStr)
   } catch(e) {
-    throw new Error('Respuesta IA (debug): ' + texto.slice(0, 500))
+    throw new Error('Debug: ' + jsonStr.slice(0, 400))
   }
 }
 
