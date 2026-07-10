@@ -1,14 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+const url = 'https://dptfgqdybjuhsehyhuyy.supabase.co'
+const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwdGZncWR5Ymp1aHNlaHlodXl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNDM4OTEsImV4cCI6MjA5MzgxOTg5MX0.Pek-PptrKcUYh6jCKocnhqO4umbUx5LWtgwrE4WzjF4'
 
-// Cliente para schema pedidos
 export const supabase = createClient(url, key, {
   db: { schema: 'pedidos' }
 })
 
-// Cliente para schema costos (solo lectura, para traer descripción y foto)
 export const supabaseCostos = createClient(url, key, {
   db: { schema: 'costos' }
 })
