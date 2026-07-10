@@ -5,16 +5,13 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
   var base64 = await fileToBase64(archivo)
   var mimeType = getMimeType(archivo)
 
-  var prompt = 'Sos un asistente que extrae datos de pedidos de indumentaria para Lavalle Comercial. ' +
-    'Analizá el archivo adjunto que es un pedido de un cliente. ' +
-    'Primero identificá el cliente leyendo el encabezado del documento (puede ser Garcia Reguera, Balbi, Sucati o Chandal). ' +
-    'Luego extraé TODA la distribución por sucursal de cada artículo. ' +
-    'El codigo_nuestro es el código del proveedor (Lavalle), codigo_cliente es el código del cliente. ' +
-    'Para Garcia Reguera las sucursales están en la tabla de distribución al pie del documento. ' +
-    'Para Balbi las sucursales son columnas numeradas en el PDF. ' +
-    'Para Sucati/Chandal los talles equivalen: 3=4, 4=6, 5=8, 6=10, 7=12. ' +
-    'Respondé ÚNICAMENTE con JSON válido, sin texto antes ni después, sin backticks. Formato exacto: ' +
-    '{"numero_pedido":"string o null","fecha_pedido":"YYYY-MM-DD o null","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string o null","descripcion_cliente":"string","precio_unitario":0,"variantes":[],"sucursales":[{"nro_sucursal":"string","cantidad":0}],"modulos":[],"total_unidades":0}]}'
+  var prompt = 'Sos un asistente que extrae datos de pedidos de indumentaria para Lavalle Comercial SRL. ' +
+    'Analizá el archivo adjunto. ' +
+    'IMPORTANTE para Garcia Reguera: en la tabla de distribucion, la columna "Origen" es el codigo de Lavalle (codigo_nuestro), la columna "Articulo" es el codigo del cliente (codigo_cliente). Los numeros como 004,006,008,010,012 al inicio del codigo del cliente son TALLES, no sucursales separadas. Cada articulo tiene multiples filas de talles. Las columnas 01,04,06,10,11,13,14,15,17 son las sucursales. Para cada articulo (mismo codigo_nuestro), suma las cantidades de todos los talles por sucursal para obtener el total por sucursal. Tambien guarda la curva de talles como objeto {talle: cantidad_por_sucursal}. ' +
+    'Para Balbi: las sucursales son columnas numeradas del 1 al 23. ' +
+    'Para Sucati/Chandal: talles equivalen 3=4, 4=6, 5=8, 6=10, 7=12. Sucursales 0 al 23. ' +
+    'Respondé ÚNICAMENTE con JSON válido sin texto extra ni backticks: ' +
+    '{"numero_pedido":"string o null","fecha_pedido":"YYYY-MM-DD o null","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string o null","descripcion_cliente":"string","precio_unitario":0,"curva_talles":{"4":0,"6":0,"8":0,"10":0,"12":0},"sucursales":[{"nro_sucursal":"string","cantidad":0}],"modulos":[],"total_unidades":0}]}'
 
   var response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -54,7 +51,6 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
 
   if (!texto) throw new Error('Sin respuesta de la IA.')
 
-  // El modelo continúa desde "{" así que agregamos la llave de apertura
   var jsonStr = '{' + texto
   var jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
   if (jsonMatch) jsonStr = jsonMatch[0]
