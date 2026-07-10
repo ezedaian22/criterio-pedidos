@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useEffect } from 'react'
 import { getSession } from './lib/auth'
 import Login from './pages/Login'
