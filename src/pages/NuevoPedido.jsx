@@ -157,7 +157,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
 
       if (art.sucursales && art.sucursales.length) {
         var sucData = art.sucursales.map(function(s) {
-          return { pedido_articulo_id: artDB.id, nro_sucursal: s.nro_sucursal, cantidad: s.cantidad, estado: 'pendiente', es_entrega_final: s.nro_sucursal === '0' }
+          return { pedido_articulo_id: artDB.id, nro_sucursal: s.nro_sucursal, cantidad: s.cantidad, estado: 'pendiente', es_entrega_final: s.nro_sucursal === '0', talles: s.talles || null }
         })
         var sucRes = await supabase.from('pedido_sucursales').insert(sucData)
         if (sucRes.error) throw sucRes.error
