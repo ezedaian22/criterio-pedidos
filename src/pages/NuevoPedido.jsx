@@ -54,9 +54,17 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
         var resultado = await parsearArchivoPedido(archivo, '')
         var enriquecido = await enriquecerConCostos(resultado)
 
-        // Auto-detectar cliente desde nombre archivo + contenido parseado
-        var textoDeteccion = JSON.stringify(enriquecido).toLowerCase()
-        var clienteDetectado = detectarCliente(archivo.name, textoDeteccion)
+        // Auto-detectar cliente: primero desde el campo cliente_detectado de la IA, luego por nombre de archivo
+        var clienteDetectado = null
+        if (resultado.cliente_detectado && resultado.cliente_detectado !== 'desconocido') {
+          clienteDetectado = clientes.find(function(c) {
+            return c.nombre.toLowerCase().includes(resultado.cliente_detectado.toLowerCase().split(' ')[0])
+          })
+        }
+        if (!clienteDetectado) {
+          var textoDeteccion = JSON.stringify(enriquecido).toLowerCase()
+          clienteDetectado = detectarCliente(archivo.name, textoDeteccion)
+        }
 
         resultados.push({
           archivo: archivo.name,
