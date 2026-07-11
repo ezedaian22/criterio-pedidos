@@ -322,10 +322,21 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, cargando, especial, bloq
       <div style={{ flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ color: config.color, fontWeight: 600, fontSize: '0.875rem' }}>{config.label}</span>
-          <span className="num" style={{ color: '#ffffff', fontWeight: 700, fontSize: '1.1rem' }}>{suc.cantidad} u</span>
+          <span className="num" style={{ color: '#ffffff', fontWeight: 700, fontSize: '1.1rem' }}>{suc.cantidad}<span style={{ fontSize: '0.75rem', color: '#a0aec0', fontWeight: 400 }}> u</span></span>
         </div>
+        {suc.talles && Object.keys(suc.talles).length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+            {Object.entries(suc.talles).map(function(entry) {
+              return (
+                <span key={entry[0]} style={{ fontSize: '0.7rem', background: '#0f1117', border: '1px solid #3b5bdb', padding: '0.1rem 0.35rem', borderRadius: '0.25rem', color: '#93c5fd' }}>
+                  T{entry[0]}: <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{entry[1]}</span>u
+                </span>
+              )
+            })}
+          </div>
+        )}
         {suc.estado === 'finalizado' && suc.nro_cajas && (
-          <p style={{ fontSize: '0.75rem', color: '#6b7280' }}>{suc.nro_cajas} caja{suc.nro_cajas > 1 ? 's' : ''} · {formatFecha(suc.fecha_finalizacion)}</p>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>{suc.nro_cajas} caja{suc.nro_cajas > 1 ? 's' : ''} · {formatFecha(suc.fecha_finalizacion)}</p>
         )}
       </div>
 
