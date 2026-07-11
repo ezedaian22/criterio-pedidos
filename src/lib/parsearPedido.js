@@ -7,11 +7,11 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
 
   var prompt = 'Sos un asistente que extrae datos de pedidos de indumentaria para Lavalle Comercial SRL. ' +
     'Analizá el archivo adjunto. ' +
-    'IMPORTANTE para Garcia Reguera: en la tabla de distribucion, la columna "Origen" es el codigo de Lavalle (codigo_nuestro), la columna "Articulo" es el codigo del cliente (codigo_cliente). Los numeros como 004,006,008,010,012 al inicio del codigo del cliente son TALLES, no sucursales separadas. Cada articulo tiene multiples filas de talles. Las columnas 01,04,06,10,11,13,14,15,17 son las sucursales. Para cada articulo (mismo codigo_nuestro), suma las cantidades de todos los talles por sucursal para obtener el total por sucursal. Tambien guarda la curva de talles como objeto {talle: cantidad_por_sucursal}. ' +
+    'IMPORTANTE para Garcia Reguera: en la tabla de distribucion, la columna "Origen" es el codigo de Lavalle (codigo_nuestro), la columna "Articulo" es el codigo del cliente (codigo_cliente). Los numeros como 004,006,008,010,012 al inicio del codigo del cliente son TALLES, no sucursales separadas. Cada articulo tiene multiples filas de talles. Las columnas 01,04,06,10,11,13,14,15,17 son las sucursales. Para cada articulo (mismo codigo_nuestro), suma las cantidades de todos los talles por sucursal para obtener el total por sucursal. Guarda la curva de talles como objeto donde la clave es el talle y el valor es la cantidad por sucursal (no el total). ' +
     'Para Balbi: las sucursales son columnas numeradas del 1 al 23. ' +
     'Para Sucati/Chandal: talles equivalen 3=4, 4=6, 5=8, 6=10, 7=12. Sucursales 0 al 23. ' +
-    'Respondé ÚNICAMENTE con JSON válido sin texto extra ni backticks: ' +
-    '{"numero_pedido":"string o null","fecha_pedido":"YYYY-MM-DD o null","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string o null","descripcion_cliente":"string","precio_unitario":0,"curva_talles":{"4":0,"6":0,"8":0,"10":0,"12":0},"sucursales":[{"nro_sucursal":"string","cantidad":0}],"modulos":[],"total_unidades":0}]}'
+    'Respondé ÚNICAMENTE con un objeto JSON válido sin texto extra ni backticks ni markdown. El JSON debe tener exactamente este formato: ' +
+    '{"numero_pedido":"string o null","fecha_pedido":"YYYY-MM-DD o null","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string o null","descripcion_cliente":"string","precio_unitario":0,"curva_talles":{"4":3,"6":3,"8":3,"10":2,"12":7},"sucursales":[{"nro_sucursal":"string","cantidad":0}],"modulos":[],"total_unidades":0}]}'
 
   var response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -24,19 +24,13 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'document', source: { type: 'base64', media_type: mimeType, data: base64 } },
-            { type: 'text', text: prompt }
-          ]
-        },
-        {
-          role: 'assistant',
-          content: '{'
-        }
-      ]
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: mimeType, data: base64 } },
+          { type: 'text', text: prompt }
+        ]
+      }]
     })
   })
 
@@ -51,14 +45,14 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
 
   if (!texto) throw new Error('Sin respuesta de la IA.')
 
-  var jsonStr = '{' + texto
-  var jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
-  if (jsonMatch) jsonStr = jsonMatch[0]
+  var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
+  var jsonMatch = clean.match(/\{[\s\S]*\}/)
+  if (jsonMatch) clean = jsonMatch[0]
 
   try {
-    return JSON.parse(jsonStr)
+    return JSON.parse(clean)
   } catch(e) {
-    throw new Error('Debug: ' + jsonStr.slice(0, 400))
+    throw new Error('Debug: ' + clean.slice(0, 400))
   }
 }
 
