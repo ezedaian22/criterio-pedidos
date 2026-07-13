@@ -6,40 +6,41 @@ import { alertaFecha, formatFecha, pct } from '../lib/utils'
 export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [pedidos, setPedidos] = useState([])
   const [cargando, setCargando] = useState(true)
-  const [filtro, setFiltro] = useState('activo') // activo | finalizado | todos
+  const [filtro, setFiltro] = useState('activo')
+  const [busqueda, setBusqueda] = useState('')
 
-  useEffect(() => {
-    cargarPedidos()
-  }, [])
+  useEffect(() => { cargarPedidos() }, [])
 
   async function cargarPedidos() {
     setCargando(true)
     try {
       const { data, error } = await supabase
         .from('pedidos')
-        .select(`
-          *,
-          clientes(nombre),
-          pedido_articulos(id, estado, total_unidades)
-        `)
+        .select('*, clientes(nombre), pedido_articulos(id, estado, total_unidades, codigo_nuestro, descripcion_cliente, descripcion_correcta)')
         .order('fecha_entrega', { ascending: true })
-
       if (error) throw error
       setPedidos(data || [])
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setCargando(false)
-    }
+    } catch (err) { console.error(err) }
+    finally { setCargando(false) }
   }
 
+  const busquedaLower = busqueda.toLowerCase()
+
   const pedidosFiltrados = pedidos.filter(p => {
-    if (filtro === 'activo') return p.estado === 'activo'
-    if (filtro === 'finalizado') return p.estado === 'finalizado'
-    return true
+    if (filtro === 'activo' && p.estado !== 'activo') return false
+    if (filtro === 'finalizado' && p.estado !== 'finalizado') return false
+    if (!busqueda) return true
+    // Buscar por cliente, número de pedido, código o descripción de artículo
+    if (p.clientes?.nombre?.toLowerCase().includes(busquedaLower)) return true
+    if (p.numero_pedido?.toLowerCase().includes(busquedaLower)) return true
+    if (p.pedido_articulos?.some(a =>
+      a.codigo_nuestro?.toLowerCase().includes(busquedaLower) ||
+      a.descripcion_cliente?.toLowerCase().includes(busquedaLower) ||
+      a.descripcion_correcta?.toLowerCase().includes(busquedaLower)
+    )) return true
+    return false
   })
 
-  // Alertas: pedidos vencidos o próximos a vencer
   const alertas = pedidos.filter(p => p.estado === 'activo' && alertaFecha(p.fecha_entrega) !== 'ok')
 
   return (
@@ -50,21 +51,23 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
           {alertas.map(p => {
             const tipo = alertaFecha(p.fecha_entrega)
             return (
-              <div
-                key={p.id}
-                className={`rounded-xl px-4 py-3 flex items-center justify-between cursor-pointer ${tipo === 'vencido' ? 'alerta-vencido' : 'alerta-proximo'}`}
-                onClick={() => onVerPedido(p)}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-lg">{tipo === 'vencido' ? '🔴' : '🟡'}</span>
+              <div key={p.id} onClick={() => onVerPedido(p)} style={{
+                borderRadius: '0.75rem', padding: '0.75rem 1rem',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
+                background: tipo === 'vencido' ? '#1c0a0a' : '#1c1400',
+                border: '1px solid ' + (tipo === 'vencido' ? '#b91c1c' : '#b45309'),
+                color: tipo === 'vencido' ? '#fca5a5' : '#fcd34d'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span>{tipo === 'vencido' ? '🔴' : '🟡'}</span>
                   <div>
-                    <span className="font-semibold">{p.clientes?.nombre}</span>
-                    <span className="text-sm opacity-70 ml-2">Pedido #{p.numero_pedido}</span>
+                    <span style={{ fontWeight: 600 }}>{p.clientes?.nombre}</span>
+                    <span style={{ fontSize: '0.875rem', opacity: 0.7, marginLeft: '0.5rem' }}>#{p.numero_pedido}</span>
                   </div>
                 </div>
-                <div className="text-right text-sm">
-                  <div className="font-semibold">{tipo === 'vencido' ? 'VENCIDO' : 'Próximo a vencer'}</div>
-                  <div className="opacity-70">Entrega: {formatFecha(p.fecha_entrega)}</div>
+                <div style={{ textAlign: 'right', fontSize: '0.875rem' }}>
+                  <div style={{ fontWeight: 600 }}>{tipo === 'vencido' ? 'VENCIDO' : 'Próximo a vencer'}</div>
+                  <div style={{ opacity: 0.7 }}>{formatFecha(p.fecha_entrega)}</div>
                 </div>
               </div>
             )
@@ -73,102 +76,114 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Pedidos</h1>
-        <button className="btn-primary text-sm" onClick={onNuevoPedido}>
-          + Nuevo pedido
-        </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Pedidos</h1>
+        <button className="btn-primary" style={{ fontSize: '0.875rem' }} onClick={onNuevoPedido}>+ Nuevo pedido</button>
       </div>
 
+      {/* Buscador */}
+      <input
+        className="input"
+        placeholder="🔍 Buscar por cliente, pedido, artículo o descripción..."
+        value={busqueda}
+        onChange={e => setBusqueda(e.target.value)}
+      />
+
       {/* Filtros */}
-      <div className="flex gap-2">
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
         {['activo', 'finalizado', 'todos'].map(f => (
-          <button
-            key={f}
-            onClick={() => setFiltro(f)}
-            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              filtro === f ? 'bg-brand-500 text-white' : 'bg-card border border-border text-muted hover:text-white'
-            }`}
-          >
+          <button key={f} onClick={() => setFiltro(f)} style={{
+            fontSize: '0.875rem', padding: '0.375rem 0.75rem', borderRadius: '0.5rem', fontWeight: 500, cursor: 'pointer', border: 'none',
+            background: filtro === f ? '#3b5bdb' : '#1a1d27',
+            color: filtro === f ? 'white' : '#6b7280',
+            border: filtro === f ? 'none' : '1px solid #2a2d3e'
+          }}>
             {f === 'activo' ? 'Activos' : f === 'finalizado' ? 'Finalizados' : 'Todos'}
           </button>
         ))}
       </div>
 
-      {/* Lista de pedidos */}
+      {/* Lista */}
       {cargando ? (
-        <div className="text-center text-muted py-12">Cargando...</div>
+        <div style={{ textAlign: 'center', color: '#6b7280', padding: '3rem' }}>Cargando...</div>
       ) : pedidosFiltrados.length === 0 ? (
-        <div className="text-center text-muted py-12">
-          <div className="text-4xl mb-3">📦</div>
-          <div>No hay pedidos {filtro === 'activo' ? 'activos' : filtro === 'finalizado' ? 'finalizados' : ''}</div>
-          <button className="btn-primary mt-4 text-sm" onClick={onNuevoPedido}>Cargar primer pedido</button>
+        <div style={{ textAlign: 'center', color: '#6b7280', padding: '3rem' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📦</div>
+          <div>{busqueda ? 'Sin resultados para "' + busqueda + '"' : 'No hay pedidos'}</div>
+          {!busqueda && <button className="btn-primary" style={{ marginTop: '1rem', fontSize: '0.875rem' }} onClick={onNuevoPedido}>Cargar primer pedido</button>}
         </div>
       ) : (
         <div className="space-y-3">
-          {pedidosFiltrados.map(p => <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} />)}
+          {pedidosFiltrados.map(p => <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower} />)}
         </div>
       )}
     </div>
   )
 }
 
-function TarjetaPedido({ pedido, onClick }) {
+function TarjetaPedido({ pedido, onClick, busqueda }) {
   const articulos = pedido.pedido_articulos || []
   const total = articulos.length
   const finalizados = articulos.filter(a => a.estado === 'finalizado').length
   const progreso = pct(finalizados, total)
   const alerta = alertaFecha(pedido.fecha_entrega)
 
-  const borderColor = alerta === 'vencido'
-    ? 'border-red-700'
-    : alerta === 'proximo'
-    ? 'border-yellow-700'
-    : 'border-border'
+  // Artículos que coinciden con la búsqueda
+  const artsMatch = busqueda ? articulos.filter(a =>
+    a.codigo_nuestro?.toLowerCase().includes(busqueda) ||
+    a.descripcion_cliente?.toLowerCase().includes(busqueda) ||
+    a.descripcion_correcta?.toLowerCase().includes(busqueda)
+  ) : []
+
+  const borderColor = alerta === 'vencido' ? '#b91c1c' : alerta === 'proximo' ? '#b45309' : '#2a2d3e'
 
   return (
-    <div
-      className={`card border ${borderColor} cursor-pointer hover:border-brand-500 transition-colors`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between gap-4">
+    <div onClick={onClick} style={{
+      background: '#1a1d27', border: '1px solid ' + borderColor,
+      borderRadius: '0.75rem', padding: '1rem', cursor: 'pointer'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-lg">{pedido.clientes?.nombre}</span>
-            {pedido.numero_pedido && (
-              <span className="text-muted text-sm">#{pedido.numero_pedido}</span>
-            )}
-            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-              pedido.estado === 'finalizado'
-                ? 'bg-green-900 text-green-300'
-                : 'bg-blue-900 text-blue-300'
-            }`}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: '1.125rem' }}>{pedido.clientes?.nombre}</span>
+            {pedido.numero_pedido && <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>#{pedido.numero_pedido}</span>}
+            <span style={{
+              fontSize: '0.75rem', padding: '0.125rem 0.5rem', borderRadius: '9999px', fontWeight: 600,
+              background: pedido.estado === 'finalizado' ? '#052e16' : '#1e3a5f',
+              color: pedido.estado === 'finalizado' ? '#86efac' : '#93c5fd'
+            }}>
               {pedido.estado === 'finalizado' ? 'Finalizado' : 'Activo'}
             </span>
           </div>
-          <div className="text-sm text-muted mt-1">
-            Entrega: <span className={`font-medium ${alerta === 'vencido' ? 'text-red-400' : alerta === 'proximo' ? 'text-yellow-400' : 'text-white'}`}>
+          <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>
+            Entrega: <span style={{ fontWeight: 500, color: alerta === 'vencido' ? '#f87171' : alerta === 'proximo' ? '#facc15' : 'white' }}>
               {formatFecha(pedido.fecha_entrega)}
             </span>
           </div>
+          {/* Artículos que coinciden con búsqueda */}
+          {artsMatch.length > 0 && (
+            <div style={{ marginTop: '0.375rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+              {artsMatch.map(a => (
+                <span key={a.id} style={{ fontSize: '0.7rem', background: '#1e2547', border: '1px solid #3b5bdb', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', color: '#93c5fd' }}>
+                  {a.codigo_nuestro} — {a.descripcion_correcta || a.descripcion_cliente}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-
-        <div className="text-right shrink-0">
-          <div className="num text-2xl font-bold text-white">{finalizados}<span className="text-muted text-base">/{total}</span></div>
-          <div className="text-xs text-muted">artículos</div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.5rem', fontWeight: 700, color: 'white' }}>
+            {finalizados}<span style={{ color: '#6b7280', fontSize: '1rem' }}>/{total}</span>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>artículos</div>
         </div>
       </div>
-
-      {/* Barra de progreso */}
       {total > 0 && (
-        <div className="mt-3">
-          <div className="h-1.5 bg-surface rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${progreso === 100 ? 'bg-green-500' : 'bg-brand-500'}`}
-              style={{ width: `${progreso}%` }}
-            />
+        <div style={{ marginTop: '0.75rem' }}>
+          <div style={{ height: '0.375rem', background: '#0f1117', borderRadius: '9999px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', borderRadius: '9999px', background: progreso === 100 ? '#22c55e' : '#3b5bdb', width: progreso + '%', transition: 'width 0.3s' }} />
           </div>
-          <div className="text-xs text-muted mt-1">{progreso}% completado</div>
+          <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>{progreso}% completado</div>
         </div>
       )}
     </div>
