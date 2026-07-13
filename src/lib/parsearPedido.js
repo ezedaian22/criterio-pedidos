@@ -211,6 +211,11 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
   // Para GR: parsear distribución con código JS, pedir solo metadatos a la IA
   if (esGR && paginas) {
     var articulosGR = parsearGR(paginas)
+    // DEBUG: mostrar primeras líneas del texto extraído
+    if (!articulosGR || articulosGR.length === 0) {
+      var debug = textoPDF ? textoPDF.slice(0, 1000) : 'SIN TEXTO'
+      throw new Error('DEBUG texto PDF:\n' + debug)
+    }
     var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
 
     return {
