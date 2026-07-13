@@ -57,8 +57,12 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
         // Auto-detectar cliente: primero desde el campo cliente_detectado de la IA, luego por nombre de archivo
         var clienteDetectado = null
         if (resultado.cliente_detectado && resultado.cliente_detectado !== 'desconocido') {
+          var detNorm = resultado.cliente_detectado.toLowerCase()
+            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
           clienteDetectado = clientes.find(function(c) {
-            return c.nombre.toLowerCase().includes(resultado.cliente_detectado.toLowerCase().split(' ')[0])
+            var cNorm = c.nombre.toLowerCase()
+              .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+            return cNorm.includes(detNorm.split(' ')[0]) || detNorm.includes(cNorm.split(' ')[0])
           })
         }
         if (!clienteDetectado) {
