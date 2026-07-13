@@ -56,18 +56,19 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
 
         // Auto-detectar cliente: primero desde el campo cliente_detectado de la IA, luego por nombre de archivo
         var clienteDetectado = null
-        if (resultado.cliente_detectado && resultado.cliente_detectado !== 'desconocido') {
-          var detNorm = resultado.cliente_detectado.toLowerCase()
-            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-          clienteDetectado = clientes.find(function(c) {
-            var cNorm = c.nombre.toLowerCase()
-              .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-            return cNorm.includes(detNorm.split(' ')[0]) || detNorm.includes(cNorm.split(' ')[0])
-          })
+        // Mapeo directo por cliente_detectado
+        var det = (resultado.cliente_detectado || '').toLowerCase()
+          .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+        if (det.includes('garcia') || det.includes('reguera')) {
+          clienteDetectado = clientes.find(function(c) { return c.nombre === 'García Reguera' })
+        } else if (det.includes('balbi')) {
+          clienteDetectado = clientes.find(function(c) { return c.nombre === 'Balbi' })
+        } else if (det.includes('sucati') || det.includes('chandal')) {
+          clienteDetectado = clientes.find(function(c) { return c.nombre === 'Sucati' })
         }
+        // Fallback por nombre de archivo
         if (!clienteDetectado) {
-          var textoDeteccion = JSON.stringify(enriquecido).toLowerCase()
-          clienteDetectado = detectarCliente(archivo.name, textoDeteccion)
+          clienteDetectado = detectarCliente(archivo.name, JSON.stringify(enriquecido).toLowerCase())
         }
 
         resultados.push({
