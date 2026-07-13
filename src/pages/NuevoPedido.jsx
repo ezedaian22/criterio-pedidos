@@ -316,9 +316,9 @@ function RevisarPedidos({ parseados, clientes, onEditar, onVolver, onConfirmar, 
             ) : (
               <div className="space-y-3">
                 {/* Cliente */}
-                <div>
+                <div style={{ position: 'relative', zIndex: 10 }}>
                   <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '0.25rem' }}>Cliente</label>
-                  <select className="input" value={p.clienteId || ''} onChange={e => editarCliente(idx, e.target.value)}>
+                  <select className="input" value={p.clienteId || ''} onChange={e => editarCliente(idx, e.target.value)} style={{ cursor: 'pointer', appearance: 'auto' }}>
                     <option value="">Seleccioná cliente...</option>
                     {clientes.map(function(c) { return <option key={c.id} value={c.id}>{c.nombre}</option> })}
                   </select>
@@ -366,9 +366,15 @@ function RevisarPedidos({ parseados, clientes, onEditar, onVolver, onConfirmar, 
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                                 {art.sucursales.map(function(s, si) {
                                   return (
-                                    <span key={si} style={{ fontSize: '0.7rem', padding: '0.125rem 0.375rem', borderRadius: '0.25rem', fontFamily: 'monospace', background: s.nro_sucursal === '0' ? '#3b0764' : '#1a1d27', color: s.nro_sucursal === '0' ? '#c084fc' : '#9ca3af', border: '1px solid ' + (s.nro_sucursal === '0' ? '#7e22ce' : '#2a2d3e') }}>
-                                      S{s.nro_sucursal}: {s.cantidad}
-                                    </span>
+                                    <div key={si} style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '0.375rem', background: s.nro_sucursal === '0' ? '#3b0764' : '#1a1d27', border: '1px solid ' + (s.nro_sucursal === '0' ? '#7e22ce' : '#2a2d3e') }}>
+                                      <span style={{ color: '#7b9fff', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>S{s.nro_sucursal}</span>
+                                      <span style={{ color: 'white', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, marginLeft: '0.25rem' }}>{s.cantidad}u</span>
+                                      {s.talles && Object.keys(s.talles).length > 0 && (
+                                        <div style={{ color: '#93c5fd', fontSize: '0.65rem', marginTop: '0.1rem' }}>
+                                          {Object.entries(s.talles).map(function(e) { return 'T' + e[0] + ':' + e[1] }).join(' · ')}
+                                        </div>
+                                      )}
+                                    </div>
                                   )
                                 })}
                               </div>
