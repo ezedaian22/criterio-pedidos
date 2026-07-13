@@ -157,6 +157,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
         precio_unitario: art.precio_unitario,
         total_unidades: art.total_unidades,
         curva_talles: art.curva_talles || null,
+          talles_articulo: art.talles_articulo || null,
         estado: 'pendiente',
       }).select().single()
 
