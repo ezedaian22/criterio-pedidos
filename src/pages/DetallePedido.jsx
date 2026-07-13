@@ -205,6 +205,14 @@ function ArmarArticulo({ articulo, onVolver, onActualizar }) {
           <div>
             <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{articulo.total_unidades} unidades totales</p>
             <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{sucsNormales.length} sucursales{suc0 ? ' + suc. 0 (entrega final)' : ''}</p>
+            {articulo.talles_articulo && articulo.talles_articulo.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.375rem', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>Talles:</span>
+                {articulo.talles_articulo.map(function(t) {
+                  return <span key={t} style={{ fontSize: '0.75rem', background: '#1e2547', border: '1px solid #3b5bdb', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', color: '#c8d8ff', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{t}</span>
+                })}
+              </div>
+            )}
             <p style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
               <span className="num" style={{ fontWeight: 700 }}>{finalizadasNormales}</span>
               <span style={{ color: '#6b7280' }}>/{sucsNormales.length} listas</span>
@@ -325,11 +333,11 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, cargando, especial, bloq
           <span className="num" style={{ color: '#ffffff', fontWeight: 700, fontSize: '1.1rem' }}>{suc.cantidad}<span style={{ fontSize: '0.75rem', color: '#a0aec0', fontWeight: 400 }}> u</span></span>
         </div>
         {suc.talles && Object.keys(suc.talles).length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
-            {Object.entries(suc.talles).map(function(entry) {
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginTop: '0.3rem', alignItems: 'center' }}>
+            {Object.entries(suc.talles).map(function(entry, i, arr) {
               return (
-                <span key={entry[0]} style={{ fontSize: '0.7rem', background: '#0f1117', border: '1px solid #3b5bdb', padding: '0.1rem 0.35rem', borderRadius: '0.25rem', color: '#93c5fd' }}>
-                  T{entry[0]}: <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{entry[1]}</span>u
+                <span key={entry[0]} style={{ fontSize: '0.7rem', color: '#93c5fd' }}>
+                  T<span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{entry[0]}</span>:<span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, color: '#ffffff' }}>{entry[1]}</span>{i < arr.length - 1 ? <span style={{ color: '#3b5bdb', margin: '0 0.15rem' }}>·</span> : ''}
                 </span>
               )
             })}
