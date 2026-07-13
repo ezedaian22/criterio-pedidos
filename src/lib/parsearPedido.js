@@ -24,84 +24,183 @@ async function extraerItemsPDF(base64) {
           todosItems.push({
             x: Math.round(item.transform[4]),
             y: Math.round(item.transform[5]),
-            text: item.str.trim(),
-            pagina: p
+            text: item.str.trim()
           })
         }
       })
     }
     return todosItems
-  } catch(e) {
-    return null
-  }
+  } catch(e) { return null }
 }
 
-// Convierte los items del PDF en texto tabular estructurado para la IA
-function itemsATexto(items) {
-  if (!items) return ''
-  
-  // Agrupar por Y (fila) con tolerancia de 3px
-  var filas = {}
-  items.forEach(function(item) {
-    var yKey = Math.round(item.y / 3) * 3
-    if (!filas[yKey]) filas[yKey] = []
-    filas[yKey].push(item)
+function parsearDistribucionGR(items) {
+  // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
+  var codigosItems = items.filter(function(i) {
+    return /^\d{5}-\d{3}$/.test(i.text)
   })
-  
-  // Ordenar filas por Y descendente (arriba = mayor Y en PDF)
-  var ys = Object.keys(filas).map(Number).sort(function(a, b) { return b - a })
-  
-  var lineas = []
-  ys.forEach(function(y) {
-    var fila = filas[y].sort(function(a, b) { return a.x - b.x })
-    lineas.push(fila.map(function(i) { return i.text }).join(' | '))
+  if (codigosItems.length === 0) return null
+
+  // El Y de los codigos nos da las filas de distribucion
+  var ysFilas = codigosItems.map(function(i) { return i.y })
+  var yMin = Math.min.apply(null, ysFilas)
+  var yMax = Math.max.apply(null, ysFilas)
+
+  // Buscar fila de encabezado: numeros de 2 digitos arriba de los codigos
+  // En el PDF los Y crecen hacia arriba, entonces el encabezado tiene Y > yMax
+  var posiblesEncabezado = items.filter(function(i) {
+    return /^\d{2}$/.test(i.text) && i.y > yMax && i.y < yMax + 60
   })
-  
-  return lineas.join('\n')
-}
 
-export async function parsearArchivoPedido(archivo, clienteNombre) {
-  var apiKey = localStorage.getItem('criterio_anthropic_key')
-  if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
-
-  var base64 = await fileToBase64(archivo)
-  var mimeType = getMimeType(archivo)
-  var esPDF = archivo.type === 'application/pdf'
-
-  var items = null
-  var textoEstructurado = ''
-  if (esPDF) {
-    items = await extraerItemsPDF(base64)
-    if (items) textoEstructurado = itemsATexto(items)
+  // Si no encontramos encabezado arriba, buscar abajo
+  if (posiblesEncabezado.length < 3) {
+    posiblesEncabezado = items.filter(function(i) {
+      return /^\d{2}$/.test(i.text) && i.y < yMin && i.y > yMin - 60
+    })
   }
 
-  var prompt = [
-    'Sos un asistente que extrae datos de pedidos de indumentaria para Lavalle Comercial SRL.',
-    '',
-    'Te doy el texto del PDF donde cada linea es una fila y los elementos estan separados por |',
-    'Asi podes leer las columnas con precision.',
-    '',
-    'REGLAS:',
-    '1. cliente_detectado: lee el encabezado. "Garcia Reguera" / "Balbi" / "Sucati" / "desconocido"',
-    '2. Para GARCIA REGUERA: busca la seccion DISTRIBUCION.',
-    '   - Hay una fila de encabezado con numeros de sucursal (01, 04, 06, 10, 11, 13, 14, 15, 17)',
-    '   - Cada fila de datos tiene: [codigo_cliente]-[talle] | [codigo_nuestro] | [descripcion] | [cant_suc1] | [cant_suc2] | ... | [TOTAL]',
-    '   - El ULTIMO numero es el TOTAL, ignoralo',
-    '   - codigo_nuestro es el campo "Origen" (128, 2171, etc)',
-    '   - codigo_cliente es el campo "Articulo" sin el talle (50789, 53703, etc)',
-    '   - el talle es el numero al final del codigo (50789-004 = talle 4)',
-    '   - Agrupa por codigo_nuestro. Para cada sucursal: cantidad = suma talles, talles = {"4":X,"6":X,...}',
-    '3. Para BALBI: sucursales 1-23 en columnas. codigo_nuestro = codigo de Lavalle (170, 171, 2120, etc)',
-    '4. Para SUCATI: talles 3->4, 4->6, 5->8, 6->10, 7->12. Sucursales 0-23.',
-    '',
-    'TEXTO DEL PDF (fila por fila, columnas separadas por |):',
-    textoEstructurado,
-    '',
-    'Responde SOLO con JSON valido (sin texto extra ni backticks):',
-    '{"cliente_detectado":"string","numero_pedido":"string","fecha_pedido":"YYYY-MM-DD","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string","descripcion_cliente":"string","precio_unitario":0,"talles_articulo":["4","6","8","10","12"],"sucursales":[{"nro_sucursal":"string","cantidad":0,"talles":{"4":0,"6":0,"8":0,"10":0,"12":0}}],"modulos":[],"total_unidades":0}]}'
-  ].join('\n')
+  // Agrupar por Y para encontrar la fila de encabezado
+  var porY = {}
+  posiblesEncabezado.forEach(function(i) {
+    var y = Math.round(i.y / 4) * 4
+    if (!porY[y]) porY[y] = []
+    porY[y].push(i)
+  })
 
-  // Para el contexto visual mandamos solo el PDF (sin texto duplicado en contenido)
+  var encItems = []
+  Object.keys(porY).forEach(function(y) {
+    if (porY[y].length > encItems.length) encItems = porY[y]
+  })
+
+  if (encItems.length < 2) {
+    // Fallback: buscar en rango más amplio
+    encItems = items.filter(function(i) {
+      return /^\d{2}$/.test(i.text) &&
+        Math.abs(i.y - yMax) < 100
+    })
+    var porY2 = {}
+    encItems.forEach(function(i) {
+      var y = Math.round(i.y / 4) * 4
+      if (!porY2[y]) porY2[y] = []
+      porY2[y].push(i)
+    })
+    encItems = []
+    Object.keys(porY2).forEach(function(y) {
+      if (porY2[y].length > encItems.length) encItems = porY2[y]
+    })
+  }
+
+  if (encItems.length === 0) return null
+
+  // Ordenar encabezado por X
+  encItems = encItems.sort(function(a, b) { return a.x - b.x })
+  var sucursales = encItems.map(function(i) { return i.text })
+  var xCols = encItems.map(function(i) { return i.x })
+
+  // Parsear cada fila de codigo-talle
+  var articulos = {}
+
+  codigosItems.forEach(function(codItem) {
+    var match = codItem.text.match(/^(\d+)-(\d+)$/)
+    if (!match) return
+
+    var codCliente = match[1]
+    var talle = String(parseInt(match[2]))
+    var yFila = codItem.y
+
+    // Todos los items en la misma fila (tolerancia ±4px)
+    var filaItems = items.filter(function(i) {
+      return Math.abs(i.y - yFila) <= 4
+    }).sort(function(a, b) { return a.x - b.x })
+
+    // codigo_nuestro: primer numero de 1-4 digitos con X > X del codigo cliente
+    var codNuestro = null
+    var descTextos = []
+    filaItems.forEach(function(fi) {
+      if (fi.text === codItem.text) return
+      if (!codNuestro && /^\d{1,4}$/.test(fi.text) && fi.x > codItem.x) {
+        codNuestro = fi.text
+      } else if (codNuestro && /[A-Za-z]/.test(fi.text)) {
+        descTextos.push(fi.text)
+      }
+    })
+
+    if (!codNuestro) return
+
+    // Para cada columna de sucursal, encontrar el número más cercano en X
+    var cantidades = {}
+    xCols.forEach(function(xCol, idx) {
+      var suc = sucursales[idx]
+      // Buscar número en la fila con X cercano a la columna (tolerancia ±15px)
+      var candidatos = filaItems.filter(function(fi) {
+        return /^\d+$/.test(fi.text) &&
+               Math.abs(fi.x - xCol) <= 15 &&
+               fi.text !== codNuestro &&
+               fi.text !== codItem.text
+      })
+      if (candidatos.length > 0) {
+        // Tomar el más cercano al X de la columna
+        candidatos.sort(function(a, b) {
+          return Math.abs(a.x - xCol) - Math.abs(b.x - xCol)
+        })
+        var cant = parseInt(candidatos[0].text)
+        if (cant > 0) cantidades[suc] = cant
+      }
+    })
+
+    if (!articulos[codNuestro]) {
+      articulos[codNuestro] = {
+        codigo_nuestro: codNuestro,
+        codigo_cliente: codCliente,
+        descripcion_cliente: descTextos.join(' '),
+        precio_unitario: 0,
+        talles_articulo: [],
+        sucursales: {},
+        total_unidades: 0,
+        modulos: []
+      }
+    }
+
+    var art = articulos[codNuestro]
+    if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
+
+    Object.keys(cantidades).forEach(function(suc) {
+      var cant = cantidades[suc]
+      if (!art.sucursales[suc]) {
+        art.sucursales[suc] = { nro_sucursal: suc, cantidad: 0, talles: {} }
+      }
+      art.sucursales[suc].talles[talle] = cant
+      art.sucursales[suc].cantidad += cant
+      art.total_unidades += cant
+    })
+  })
+
+  var resultado = Object.values(articulos).map(function(art) {
+    art.talles_articulo.sort(function(a, b) { return Number(a) - Number(b) })
+    art.sucursales = Object.values(art.sucursales)
+      .filter(function(s) { return s.cantidad > 0 })
+      .sort(function(a, b) { return Number(a.nro_sucursal) - Number(b.nro_sucursal) })
+    return art
+  })
+
+  return resultado.length > 0 ? resultado : null
+}
+
+async function llamarIA(apiKey, base64, mimeType, textoPDF, soloMeta) {
+  var prompt = soloMeta
+    ? 'Extrae SOLO numero_pedido, fecha_pedido (YYYY-MM-DD), fecha_entrega (YYYY-MM-DD) de este pedido. Responde SOLO JSON: {"numero_pedido":"string","fecha_pedido":"YYYY-MM-DD","fecha_entrega":"YYYY-MM-DD"}'
+    : [
+        'Sos un asistente que extrae datos de pedidos para Lavalle Comercial SRL.',
+        'cliente_detectado = "Garcia Reguera", "Balbi", "Sucati" o "desconocido".',
+        'BALBI: sucursales 1-23 en columnas. codigo_nuestro = codigo de Lavalle (170, 2120, etc). Agrupa por codigo_nuestro, para cada sucursal: cantidad=suma talles, talles={"talle":cant}.',
+        'SUCATI: talles 3->4, 4->6, 5->8, 6->10, 7->12. Sucursales 0-23.',
+        'Responde SOLO JSON: {"cliente_detectado":"string","numero_pedido":"string","fecha_pedido":"YYYY-MM-DD","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string","descripcion_cliente":"string","precio_unitario":0,"talles_articulo":["4","6","8","10","12"],"sucursales":[{"nro_sucursal":"string","cantidad":0,"talles":{"4":0,"6":0}}],"modulos":[],"total_unidades":0}]}'
+      ].join('\n')
+
+  var contenido = []
+  if (textoPDF) contenido.push({ type: 'text', text: 'PDF:\n' + textoPDF.slice(0, 2000) })
+  contenido.push({ type: 'document', source: { type: 'base64', media_type: mimeType, data: base64 } })
+  contenido.push({ type: 'text', text: prompt })
+
   var response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -113,12 +212,7 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt }
-        ]
-      }]
+      messages: [{ role: 'user', content: contenido }]
     })
   })
 
@@ -127,11 +221,48 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
   var texto = (data.content.find(function(b) { return b.type === 'text' }) || {}).text || ''
   var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
   var m = clean.match(/\{[\s\S]*\}/)
-  try {
-    return JSON.parse(m ? m[0] : clean)
-  } catch(e) {
-    throw new Error('Error parseando respuesta: ' + clean.slice(0, 300))
+  return JSON.parse(m ? m[0] : clean)
+}
+
+export async function parsearArchivoPedido(archivo, clienteNombre) {
+  var apiKey = localStorage.getItem('criterio_anthropic_key')
+  if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
+
+  var base64 = await fileToBase64(archivo)
+  var mimeType = getMimeType(archivo)
+  var esPDF = archivo.type === 'application/pdf'
+
+  var items = null
+  var textoPDF = null
+  if (esPDF) {
+    items = await extraerItemsPDF(base64)
+    if (items) textoPDF = items.map(function(i) { return i.text }).join(' ')
   }
+
+  // Detectar si es GR por texto
+  var esGR = false
+  if (textoPDF) {
+    var tl = textoPDF.toLowerCase()
+    esGR = tl.includes('garcia reguera') || tl.includes('galver') ||
+           archivo.name.toLowerCase().includes('_gr')
+  }
+
+  if (esGR && items) {
+    var articulosGR = parsearDistribucionGR(items)
+    if (articulosGR && articulosGR.length > 0) {
+      var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
+      return {
+        cliente_detectado: 'Garcia Reguera',
+        numero_pedido: meta.numero_pedido,
+        fecha_pedido: meta.fecha_pedido,
+        fecha_entrega: meta.fecha_entrega,
+        articulos: articulosGR
+      }
+    }
+  }
+
+  // Balbi / Sucati / fallback: IA interpreta todo
+  return await llamarIA(apiKey, base64, mimeType, textoPDF, false)
 }
 
 function getMimeType(archivo) {
