@@ -274,17 +274,49 @@ function ArmarArticulo({ articulo, onVolver, onActualizar, onExpandirFoto }) {
     finally { setGuardando(null) }
   }
 
+  function exportarArticulo() {
+    const rows = [['Sucursal', 'Cant. Total', 'T4', 'T6', 'T8', 'T10', 'T12', 'Estado', 'Cajas']]
+    sucsNormales.forEach(function(suc) {
+      rows.push([
+        suc.nro_sucursal,
+        suc.cantidad,
+        suc.talles && suc.talles['4'] || '',
+        suc.talles && suc.talles['6'] || '',
+        suc.talles && suc.talles['8'] || '',
+        suc.talles && suc.talles['10'] || '',
+        suc.talles && suc.talles['12'] || '',
+        suc.estado,
+        suc.nro_cajas || ''
+      ])
+    })
+    const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'Art_' + articulo.codigo_nuestro + '_distribucion.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-4">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <button onClick={onVolver} style={{ color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>← Volver</button>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontFamily: "'Archivo Black', sans-serif", color: '#6b8fff', fontWeight: 700, fontSize: '1.125rem' }}>{articulo.codigo_nuestro}</span>
-            {articulo.codigo_cliente && <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>({articulo.codigo_cliente})</span>}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button onClick={onVolver} style={{ color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>← Volver</button>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontFamily: "'Archivo Black', sans-serif", color: '#6b8fff', fontWeight: 700, fontSize: '1.125rem' }}>{articulo.codigo_nuestro}</span>
+              {articulo.codigo_cliente && <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>({articulo.codigo_cliente})</span>}
+            </div>
+            <p style={{ fontSize: '0.875rem', color: 'white' }}>{articulo.descripcion_correcta || articulo.descripcion_cliente}</p>
           </div>
-          <p style={{ fontSize: '0.875rem', color: 'white' }}>{articulo.descripcion_correcta || articulo.descripcion_cliente}</p>
         </div>
+        <button onClick={exportarArticulo} style={{
+          background: '#166534', color: '#86efac', border: '1px solid #15803d',
+          borderRadius: '0.5rem', padding: '0.375rem 0.75rem', fontSize: '0.75rem',
+          fontWeight: 600, cursor: 'pointer', flexShrink: 0
+        }}>📊 Exportar</button>
       </div>
 
       {/* Info artículo */}
@@ -340,7 +372,7 @@ function ArmarArticulo({ articulo, onVolver, onActualizar, onExpandirFoto }) {
       {/* Sucursales */}
       <div className="space-y-2">
         <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Sucursales</h2>
-        {sucsNormales.map(suc => (
+        {sucsNormales.filter(s => s.cantidad > 0).map(suc => (
           <FilaSucursal key={suc.id} suc={suc} onAvanzar={() => avanzarEstado(suc)} onGuardarCajas={n => guardarCajas(suc, n)} cargando={guardando === suc.id} />
         ))}
       </div>
