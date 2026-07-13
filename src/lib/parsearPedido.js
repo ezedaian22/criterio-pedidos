@@ -241,18 +241,11 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
   }
 
   if (esGR && items) {
-    var articulosGR = parsearGR(items)
-    var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
-
-    if (articulosGR && articulosGR.length > 0) {
-      return {
-        cliente_detectado: 'Garcia Reguera',
-        numero_pedido: meta.numero_pedido,
-        fecha_pedido: meta.fecha_pedido,
-        fecha_entrega: meta.fecha_entrega,
-        articulos: articulosGR
-      }
-    }
+    // DEBUG: mostrar items de la zona de distribucion
+    var itemsDistrib = items.filter(function(i) {
+      return /^\d{5}-\d{3}$/.test(i.text) || /^\d{2}$/.test(i.text)
+    }).slice(0, 30)
+    throw new Error('DEBUG items: ' + JSON.stringify(itemsDistrib.map(function(i){ return {t:i.text,x:i.x,y:i.y} })))
   }
 
   // Fallback: IA interpreta todo
