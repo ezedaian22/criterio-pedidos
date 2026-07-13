@@ -1,3 +1,4 @@
+// ─── Extrae texto del PDF página por página ───────────────────────────────
 async function extraerTextoPDF(base64) {
   try {
     if (!window.pdfjsLib) {
@@ -8,83 +9,150 @@ async function extraerTextoPDF(base64) {
         script.onerror = reject
         document.head.appendChild(script)
       })
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
     }
-    var pdfData = atob(base64)
-    var pdfBytes = new Uint8Array(pdfData.length)
-    for (var i = 0; i < pdfData.length; i++) pdfBytes[i] = pdfData.charCodeAt(i)
-    var pdf = await window.pdfjsLib.getDocument({ data: pdfBytes }).promise
-    var textoCompleto = ''
+    var raw = atob(base64)
+    var bytes = new Uint8Array(raw.length)
+    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+    var pdf = await window.pdfjsLib.getDocument({ data: bytes }).promise
+    var paginas = []
     for (var p = 1; p <= pdf.numPages; p++) {
       var page = await pdf.getPage(p)
       var content = await page.getTextContent()
-      var items = content.items
+      // Agrupar por fila (Y) y ordenar por X
       var filas = {}
-      items.forEach(function(item) {
+      content.items.forEach(function(item) {
         var y = Math.round(item.transform[5])
         if (!filas[y]) filas[y] = []
-        filas[y].push({ x: item.transform[4], text: item.str })
+        filas[y].push({ x: item.transform[4], text: item.str.trim() })
       })
-      var ysOrdenados = Object.keys(filas).map(Number).sort(function(a, b) { return b - a })
-      ysOrdenados.forEach(function(y) {
-        var fila = filas[y].sort(function(a, b) { return a.x - b.x })
-        textoCompleto += fila.map(function(i) { return i.text }).join('\t') + '\n'
-      })
+      var ys = Object.keys(filas).map(Number).sort(function(a, b) { return b - a })
+      var textoPagina = ys.map(function(y) {
+        return filas[y].sort(function(a, b) { return a.x - b.x })
+                       .map(function(i) { return i.text }).filter(Boolean).join('\t')
+      }).filter(Boolean).join('\n')
+      paginas.push(textoPagina)
     }
-    return textoCompleto
+    return paginas
   } catch(e) {
     return null
   }
 }
 
-export async function parsearArchivoPedido(archivo, clienteNombre) {
-  var apiKey = localStorage.getItem('criterio_anthropic_key')
-  if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
+// ─── Parser específico para García Reguera ───────────────────────────────
+function parsearGR(paginas) {
+  // Encontrar la página/sección de DISTRIBUCION
+  var textoTotal = paginas.join('\n')
+  var lineas = textoTotal.split('\n').map(function(l) { return l.trim() }).filter(Boolean)
 
-  var base64 = await fileToBase64(archivo)
-  var mimeType = getMimeType(archivo)
-  var esPDF = archivo.type === 'application/pdf'
+  // Encontrar línea de encabezado de sucursales
+  var idxEncabezado = -1
+  var sucursales = []
 
-  var textoPDF = null
-  if (esPDF) textoPDF = await extraerTextoPDF(base64)
+  for (var i = 0; i < lineas.length; i++) {
+    var cols = lineas[i].split('\t').map(function(c) { return c.trim() }).filter(Boolean)
+    // Buscar línea que tenga solo números de 2 dígitos (sucursales)
+    var soloNums = cols.filter(function(c) { return /^\d{2}$/.test(c) })
+    if (soloNums.length >= 3) {
+      idxEncabezado = i
+      sucursales = soloNums
+      break
+    }
+  }
 
-  var prompt = [
-    'Sos un asistente que extrae datos de pedidos de indumentaria para Lavalle Comercial SRL.',
-    '',
-    '=== REGLAS CRITICAS PARA GARCIA REGUERA ===',
-    'En la tabla DISTRIBUCION hay dos columnas clave:',
-    '- Columna "Artículo" o "Articulo": contiene el CODIGO DEL CLIENTE (ej: 50789-004). Este va en codigo_cliente.',
-    '- Columna "Origen": contiene el CODIGO NUESTRO de Lavalle (ej: 128, 2171). Este va en codigo_nuestro.',
-    'NUNCA pongas el codigo del cliente en codigo_nuestro. Son campos distintos.',
-    '',
-    'El talle está al final del codigo del cliente tras el guion: 50789-004 = talle 4, 50789-006 = talle 6.',
-    '',
-    'Las columnas de sucursales vienen DESPUES de la descripcion.',
-    'El ULTIMO numero de cada fila es el TOTAL, no es una sucursal.',
-    'Lee el encabezado de la tabla para saber qué número de sucursal corresponde a cada columna.',
-    '',
-    'Para cada codigo_nuestro, agrupa todos los talles y calcula por sucursal:',
-    '- cantidad: suma de todos los talles',
-    '- talles: {"4": cant, "6": cant, "8": cant, "10": cant, "12": cant}',
-    'Omite sucursales con cantidad 0.',
-    '',
-    '=== PARA BALBI ===',
-    'Las columnas son sucursales 1 al 23. Agrupa por codigo_nuestro igual.',
-    '',
-    '=== PARA SUCATI/CHANDAL ===',
-    'Convierte talles: 3→4, 4→6, 5→8, 6→10, 7→12.',
-    '',
-    '=== DETECCION DE CLIENTE ===',
-    'Lee el encabezado. Si dice "Garcia Reguera" → "Garcia Reguera". Si dice "Balbi" → "Balbi". Si dice "Sucati" o "Chandal" → "Sucati".',
-    '',
-    'Responde SOLO con JSON (sin texto extra ni backticks):',
-    '{"cliente_detectado":"string","numero_pedido":"string","fecha_pedido":"YYYY-MM-DD","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string","descripcion_cliente":"string","precio_unitario":0,"talles_articulo":["4","6","8","10","12"],"sucursales":[{"nro_sucursal":"string","cantidad":0,"talles":{"4":0,"6":0}}],"modulos":[],"total_unidades":0}]}'
-  ].join('\n')
+  if (idxEncabezado === -1) return null
+
+  // Leer filas de datos después del encabezado
+  var articulos = {}
+
+  for (var j = idxEncabezado + 1; j < lineas.length; j++) {
+    var cols = lineas[j].split('\t').map(function(c) { return c.trim() }).filter(Boolean)
+    if (cols.length < sucursales.length + 2) continue
+
+    // Buscar patrón: primer col tiene formato NNNNN-NNN (codigo_cliente-talle)
+    var codigoCli = cols[0]
+    var matchCli = codigoCli.match(/^(\d+)-(\d+)$/)
+    if (!matchCli) continue
+
+    var codCliente = matchCli[1]
+    var talle = String(parseInt(matchCli[2])) // "004" → "4"
+    var codNuestro = cols[1]
+    var descripcion = ''
+
+    // Las columnas del medio son descripción (texto no numérico)
+    // Las últimas cols son los números de sucursal + total
+    var numerosAlFinal = []
+    var k = cols.length - 1
+    while (k >= 2 && /^[\d.,]+$/.test(cols[k])) {
+      numerosAlFinal.unshift(cols[k])
+      k--
+      if (numerosAlFinal.length >= sucursales.length + 1) break
+    }
+    // El primer número del medio hacia adelante es descripción
+    descripcion = cols.slice(2, k + 1).join(' ')
+
+    // numerosAlFinal tiene [cant_suc1, cant_suc2, ..., TOTAL]
+    // Ignorar el último (TOTAL)
+    var cantsPorSuc = numerosAlFinal.slice(0, sucursales.length).map(function(n) {
+      return parseInt(n.replace(/[.,]/g, '')) || 0
+    })
+
+    if (!articulos[codNuestro]) {
+      articulos[codNuestro] = {
+        codigo_nuestro: codNuestro,
+        codigo_cliente: codCliente,
+        descripcion_cliente: descripcion,
+        precio_unitario: 0,
+        talles_articulo: [],
+        sucursales: {},
+        total_unidades: 0
+      }
+    }
+
+    var art = articulos[codNuestro]
+    if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
+
+    sucursales.forEach(function(suc, idx) {
+      var cant = cantsPorSuc[idx] || 0
+      if (cant === 0) return
+      if (!art.sucursales[suc]) {
+        art.sucursales[suc] = { nro_sucursal: suc, cantidad: 0, talles: {} }
+      }
+      art.sucursales[suc].talles[talle] = cant
+      art.sucursales[suc].cantidad += cant
+      art.total_unidades += cant
+    })
+  }
+
+  // Convertir sucursales de objeto a array
+  return Object.values(articulos).map(function(art) {
+    art.talles_articulo.sort(function(a, b) { return Number(a) - Number(b) })
+    art.sucursales = Object.values(art.sucursales).filter(function(s) { return s.cantidad > 0 })
+    art.modulos = []
+    return art
+  })
+}
+
+// ─── Llamada a la IA solo para metadatos + clientes no-GR ─────────────────
+async function llamarIA(apiKey, base64, mimeType, textoPDF, esGR) {
+  var prompt = esGR
+    ? [
+        'Este es un pedido de Garcia Reguera para Lavalle Comercial.',
+        'Extrae SOLO: numero_pedido, fecha_pedido (YYYY-MM-DD), fecha_entrega (YYYY-MM-DD).',
+        'Responde SOLO con JSON: {"cliente_detectado":"Garcia Reguera","numero_pedido":"string","fecha_pedido":"YYYY-MM-DD","fecha_entrega":"YYYY-MM-DD"}'
+      ].join('\n')
+    : [
+        'Sos un asistente que extrae datos de pedidos para Lavalle Comercial SRL.',
+        'PASO 1: cliente_detectado = "Garcia Reguera", "Balbi", "Sucati" o "desconocido".',
+        'PASO 2: numero_pedido, fecha_pedido (YYYY-MM-DD), fecha_entrega (YYYY-MM-DD).',
+        'PASO 3 BALBI: columnas = sucursales 1-23, filas = articulos por talle. codigo_nuestro es el nuestro (170,171,2120 etc). Agrupa por codigo_nuestro, suma talles por sucursal.',
+        'PASO 3 SUCATI: talles 3→4, 4→6, 5→8, 6→10, 7→12. Sucursales 0-23.',
+        'Responde SOLO con JSON: {"cliente_detectado":"string","numero_pedido":"string","fecha_pedido":"YYYY-MM-DD","fecha_entrega":"YYYY-MM-DD","articulos":[{"codigo_nuestro":"string","codigo_cliente":"string","descripcion_cliente":"string","precio_unitario":0,"talles_articulo":["4","6","8","10","12"],"sucursales":[{"nro_sucursal":"string","cantidad":0,"talles":{"4":0,"6":0}}],"modulos":[],"total_unidades":0}]}'
+      ].join('\n')
 
   var contenido = []
-  if (textoPDF) {
-    contenido.push({ type: 'text', text: 'TEXTO DEL PDF (usa esto para leer las tablas con precision):\n\n' + textoPDF })
-  }
+  if (textoPDF) contenido.push({ type: 'text', text: 'TEXTO DEL PDF:\n\n' + textoPDF })
   contenido.push({ type: 'document', source: { type: 'base64', media_type: mimeType, data: base64 } })
   contenido.push({ type: 'text', text: prompt })
 
@@ -103,25 +171,60 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
     })
   })
 
-  if (!response.ok) {
-    var err = await response.text()
-    throw new Error('Error API: ' + err.slice(0, 300))
-  }
-
+  if (!response.ok) throw new Error('Error API: ' + (await response.text()).slice(0, 200))
   var data = await response.json()
-  var bloque = data.content && data.content.find(function(b) { return b.type === 'text' })
-  var texto = bloque ? bloque.text : ''
-  if (!texto) throw new Error('Sin respuesta de la IA.')
-
+  var texto = (data.content.find(function(b) { return b.type === 'text' }) || {}).text || ''
   var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
-  var jsonMatch = clean.match(/\{[\s\S]*\}/)
-  if (jsonMatch) clean = jsonMatch[0]
+  var m = clean.match(/\{[\s\S]*\}/)
+  if (m) clean = m[0]
+  return JSON.parse(clean)
+}
 
-  try {
-    return JSON.parse(clean)
-  } catch(e) {
-    throw new Error('Debug: ' + clean.slice(0, 500))
+// ─── Función principal ─────────────────────────────────────────────────────
+export async function parsearArchivoPedido(archivo, clienteNombre) {
+  var apiKey = localStorage.getItem('criterio_anthropic_key')
+  if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
+
+  var base64 = await fileToBase64(archivo)
+  var mimeType = getMimeType(archivo)
+  var esPDF = archivo.type === 'application/pdf'
+
+  var paginas = null
+  var textoPDF = null
+  if (esPDF) {
+    paginas = await extraerTextoPDF(base64)
+    if (paginas) textoPDF = paginas.join('\n---PAGINA---\n')
   }
+
+  // Detectar si es GR por texto extraído o nombre de archivo
+  var esGR = false
+  if (textoPDF) {
+    esGR = textoPDF.toLowerCase().includes('garcia reguera') ||
+           textoPDF.toLowerCase().includes('galver')
+  }
+  if (!esGR) {
+    esGR = archivo.name.toLowerCase().includes('_gr') ||
+           archivo.name.toLowerCase().includes('garcia') ||
+           archivo.name.toLowerCase().includes('reguera')
+  }
+
+  // Para GR: parsear distribución con código JS, pedir solo metadatos a la IA
+  if (esGR && paginas) {
+    var articulosGR = parsearGR(paginas)
+    var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
+
+    return {
+      cliente_detectado: 'Garcia Reguera',
+      numero_pedido: meta.numero_pedido,
+      fecha_pedido: meta.fecha_pedido,
+      fecha_entrega: meta.fecha_entrega,
+      articulos: articulosGR || []
+    }
+  }
+
+  // Para Balbi/Sucati: la IA interpreta todo
+  var resultado = await llamarIA(apiKey, base64, mimeType, textoPDF, false)
+  return resultado
 }
 
 function getMimeType(archivo) {
