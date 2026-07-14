@@ -191,7 +191,9 @@ export async function exportarArticuloSheets(articulo, pedido) {
   rows.push([])
   const preparadores = (articulo.preparadores || []).join(', ') || 'Sin asignar'
   const descuento = pedido.descuento ? pedido.descuento + '%' : ''
+  const razonSocial = pedido.razon_social || ''
   rows.push(['Cliente', cliente, '', 'Pedido N°', nroPedido])
+  if (razonSocial) rows.push(['FACTURAR A', razonSocial])
   rows.push(['Artículo', codigo, '', 'Descripción', descripcion])
   rows.push(['Precio unit.', precio, '', 'Total unid.', articulo.total_unidades || ''])
   if (descuento) rows.push(['Descuento', descuento])
@@ -372,6 +374,8 @@ export async function exportarRomaneoSheets(pedido, articulos) {
   rows.push(['ROMANEO — ' + cliente.toUpperCase()])
   rows.push([])
   rows.push(['Cliente', cliente, '', 'N° Pedido', nroPedido])
+  const razonSocialPedido = pedido.razon_social || ''
+  if (razonSocialPedido) rows.push(['FACTURAR A', razonSocialPedido])
   rows.push(['Fecha pedido', fechaPedido, '', 'Fecha entrega', fechaEntrega])
   if (descuentoPedido) rows.push(['Descuento', descuentoPedido])
   rows.push([])
