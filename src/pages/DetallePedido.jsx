@@ -2,6 +2,7 @@ import React from 'react'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatFecha, alertaFecha, pct } from '../lib/utils'
+import { exportarArticuloSheets, exportarRomaneoSheets } from '../lib/exportarSheets'
 
 export default function DetallePedido({ session, pedido, onVolver }) {
   const [articulos, setArticulos] = useState([])
@@ -9,6 +10,8 @@ export default function DetallePedido({ session, pedido, onVolver }) {
   const [artSeleccionado, setArtSeleccionado] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [fotoExpandida, setFotoExpandida] = useState(null)
+  const [exportandoRomaneo, setExportandoRomaneo] = useState(false)
+  const [exportError, setExportError] = useState(null)
 
   useEffect(() => { cargarArticulos() }, [pedido.id])
 
@@ -26,44 +29,17 @@ export default function DetallePedido({ session, pedido, onVolver }) {
     finally { setCargando(false) }
   }
 
-  function exportarSheets() {
-    // Generar CSV del romaneo
-    const cliente = pedido.clientes?.nombre || ''
-    const nroPedido = pedido.numero_pedido || ''
-    const rows = []
-
-    // Encabezado
-    rows.push(['Cliente', 'N° Pedido', 'Artículo', 'Descripción', 'Precio Unit.', 'Sucursal', 'Cant. Total Suc.', 'Talles', 'Total Pedido'])
-
-    articulos.forEach(art => {
-      const sucursales = art.pedido_sucursales || []
-      sucursales.forEach(suc => {
-        if (suc.cantidad === 0) return
-        const tallesStr = suc.talles
-          ? Object.entries(suc.talles).map(([t, c]) => 'T' + t + ':' + c).join(' ')
-          : ''
-        rows.push([
-          cliente,
-          nroPedido,
-          art.codigo_nuestro,
-          art.descripcion_correcta || art.descripcion_cliente,
-          art.precio_unitario || '',
-          suc.nro_sucursal,
-          suc.cantidad,
-          tallesStr,
-          art.total_unidades
-        ])
-      })
-    })
-
-    const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n')
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'Romaneo_' + cliente + '_' + nroPedido + '.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+  async function exportarSheets() {
+    setExportandoRomaneo(true)
+    setExportError(null)
+    try {
+      const url = await exportarRomaneoSheets(pedido, articulos)
+      window.open(url, '_blank')
+    } catch (err) {
+      setExportError(err.message || 'Error al exportar')
+    } finally {
+      setExportandoRomaneo(false)
+    }
   }
 
   const alerta = alertaFecha(pedido.fecha_entrega)
@@ -85,6 +61,7 @@ export default function DetallePedido({ session, pedido, onVolver }) {
         {fotoExpandida && <ModalFoto url={fotoExpandida} onClose={() => setFotoExpandida(null)} />}
         <ArmarArticulo
           articulo={artSeleccionado}
+          pedido={pedido}
           onVolver={() => { setArtSeleccionado(null); cargarArticulos() }}
           onActualizar={cargarArticulos}
           onExpandirFoto={setFotoExpandida}
@@ -106,14 +83,23 @@ export default function DetallePedido({ session, pedido, onVolver }) {
               {pedido.numero_pedido && <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>#{pedido.numero_pedido}</p>}
             </div>
           </div>
-          <button onClick={exportarSheets} style={{
-            background: '#166534', color: '#86efac', border: '1px solid #15803d',
+          <button onClick={exportarSheets} disabled={exportandoRomaneo} style={{
+            background: exportandoRomaneo ? '#14532d' : '#166534',
+            color: '#86efac', border: '1px solid #15803d',
             borderRadius: '0.5rem', padding: '0.375rem 0.75rem', fontSize: '0.75rem',
-            fontWeight: 600, cursor: 'pointer', flexShrink: 0
+            fontWeight: 600, cursor: exportandoRomaneo ? 'not-allowed' : 'pointer', flexShrink: 0,
+            opacity: exportandoRomaneo ? 0.7 : 1
           }}>
-            📊 Exportar
+            {exportandoRomaneo ? '⏳ Subiendo...' : '📊 Romaneo → Sheets'}
           </button>
         </div>
+
+        {exportError && (
+          <div style={{ background: '#1c0a0a', border: '1px solid #b91c1c', borderRadius: '0.5rem', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#f87171', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>⚠️ {exportError}</span>
+            <button onClick={() => setExportError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+          </div>
+        )}
 
         {/* Info pedido */}
         <div className="card" style={{
@@ -220,10 +206,12 @@ function TarjetaArticulo({ art, onClick, onExpandirFoto }) {
   )
 }
 
-function ArmarArticulo({ articulo, onVolver, onActualizar, onExpandirFoto }) {
+function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFoto }) {
   const [sucursales, setSucursales] = useState(articulo.pedido_sucursales || [])
   const [guardando, setGuardando] = useState(null)
   const [mostrarCurva, setMostrarCurva] = useState(true)
+  const [exportandoArt, setExportandoArt] = useState(false)
+  const [exportArtError, setExportArtError] = useState(null)
   const variantes = articulo.pedido_articulo_variantes || []
   const modulos = articulo.pedido_modulos || []
 
@@ -274,29 +262,19 @@ function ArmarArticulo({ articulo, onVolver, onActualizar, onExpandirFoto }) {
     finally { setGuardando(null) }
   }
 
-  function exportarArticulo() {
-    const rows = [['Sucursal', 'Cant. Total', 'T4', 'T6', 'T8', 'T10', 'T12', 'Estado', 'Cajas']]
-    sucsNormales.forEach(function(suc) {
-      rows.push([
-        suc.nro_sucursal,
-        suc.cantidad,
-        suc.talles && suc.talles['4'] || '',
-        suc.talles && suc.talles['6'] || '',
-        suc.talles && suc.talles['8'] || '',
-        suc.talles && suc.talles['10'] || '',
-        suc.talles && suc.talles['12'] || '',
-        suc.estado,
-        suc.nro_cajas || ''
-      ])
-    })
-    const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n')
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'Art_' + articulo.codigo_nuestro + '_distribucion.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+  async function exportarArticulo() {
+    setExportandoArt(true)
+    setExportArtError(null)
+    try {
+      // Armar objeto articulo con las sucursales actuales del estado local
+      const articuloConSucs = { ...articulo, pedido_sucursales: sucursales }
+      const url = await exportarArticuloSheets(articuloConSucs, pedido)
+      window.open(url, '_blank')
+    } catch (err) {
+      setExportArtError(err.message || 'Error al exportar')
+    } finally {
+      setExportandoArt(false)
+    }
   }
 
   return (
@@ -312,11 +290,12 @@ function ArmarArticulo({ articulo, onVolver, onActualizar, onExpandirFoto }) {
             <p style={{ fontSize: '0.875rem', color: 'white' }}>{articulo.descripcion_correcta || articulo.descripcion_cliente}</p>
           </div>
         </div>
-        <button onClick={exportarArticulo} style={{
-          background: '#166534', color: '#86efac', border: '1px solid #15803d',
+        <button onClick={exportarArticulo} disabled={exportandoArt} style={{
+          background: exportandoArt ? '#14532d' : '#166534', color: '#86efac', border: '1px solid #15803d',
           borderRadius: '0.5rem', padding: '0.375rem 0.75rem', fontSize: '0.75rem',
-          fontWeight: 600, cursor: 'pointer', flexShrink: 0
-        }}>📊 Exportar</button>
+          fontWeight: 600, cursor: exportandoArt ? 'not-allowed' : 'pointer', flexShrink: 0,
+          opacity: exportandoArt ? 0.7 : 1
+        }}>{exportandoArt ? '⏳' : '📊 → Sheets'}</button>
       </div>
 
       {/* Info artículo */}
@@ -384,6 +363,31 @@ function ArmarArticulo({ articulo, onVolver, onActualizar, onExpandirFoto }) {
           {!todasNormalesOk && <p style={{ fontSize: '0.75rem', color: '#c084fc' }}>Se habilita cuando todas las sucursales estén listas.</p>}
         </div>
       )}
+
+      {/* Error exportación artículo */}
+      {exportArtError && (
+        <div style={{ background: '#1c0a0a', border: '1px solid #b91c1c', borderRadius: '0.5rem', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#f87171', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>⚠️ {exportArtError}</span>
+          <button onClick={() => setExportArtError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+        </div>
+      )}
+
+      {/* Botón exportar */}
+      <button onClick={exportarArticulo} disabled={exportandoArt} style={{
+        width: '100%',
+        background: exportandoArt ? '#14532d' : '#166534',
+        color: '#86efac',
+        border: '1px solid #15803d',
+        borderRadius: '0.75rem',
+        padding: '0.875rem',
+        fontSize: '0.9rem',
+        fontWeight: 700,
+        cursor: exportandoArt ? 'not-allowed' : 'pointer',
+        marginTop: '0.5rem',
+        opacity: exportandoArt ? 0.7 : 1
+      }}>
+        {exportandoArt ? '⏳ Subiendo a Sheets...' : '📊 Exportar distribución → Sheets'}
+      </button>
     </div>
   )
 }
