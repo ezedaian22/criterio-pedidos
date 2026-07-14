@@ -221,7 +221,9 @@ async function llamarIA(apiKey, base64, mimeType, textoPDF, soloMeta) {
   var texto = (data.content.find(function(b) { return b.type === 'text' }) || {}).text || ''
   var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
   var m = clean.match(/\{[\s\S]*\}/)
-  return JSON.parse(m ? m[0] : clean)
+  var parsed = JSON.parse(m ? m[0] : clean)
+  console.log('IA RESPONSE:', JSON.stringify(parsed).slice(0, 500))
+  return parsed
 }
 
 export async function parsearArchivoPedido(archivo, clienteNombre) {
