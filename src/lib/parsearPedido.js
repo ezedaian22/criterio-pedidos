@@ -377,6 +377,12 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             for (var k = j+1; k < row.length; k++) {
               if (row[k] !== null && row[k] !== '' && row[k] !== undefined) { siguienteVal = row[k]; break }
             }
+            if (!siguienteVal) continue
+            if (vs.startsWith('del')) fechaEntregaDesde = formatearFechaXLS(siguienteVal)
+            if (vs.startsWith('al')) fechaEntregaHasta = formatearFechaXLS(siguienteVal)
+            if (vs === 'fecha' && !fechaPedido) fechaPedido = formatearFechaXLS(siguienteVal)
+          }
+        }
 
         // Encontrar fila encabezado
         var headerRowIdx = -1
