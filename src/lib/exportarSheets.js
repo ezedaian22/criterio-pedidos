@@ -87,9 +87,11 @@ function color(r, g, b) {
 
 const AZUL_HEADER = color(59, 91, 219)   // #3b5bdb
 const VERDE_OK    = color(34, 197, 94)    // #22c55e
-const GRIS_ROW    = color(26, 29, 39)     // #1a1d27
-const BLANCO      = color(255, 255, 255)
-const NEGRO       = color(15, 17, 23)     // #0f1117
+const GRIS_ROW    = color(255, 255, 255)  // blanco
+const BLANCO      = color(255, 255, 255)  // blanco
+const NEGRO       = color(255, 255, 255)  // fondo blanco general
+const TEXTO_NEGRO = color(0, 0, 0)        // texto negro
+const TEXTO_BLANCO = color(255, 255, 255) // texto blanco (para headers)
 
 // ─── Crear Spreadsheet ────────────────────────────────────────────────────────
 
@@ -238,11 +240,11 @@ export async function exportarArticuloSheets(articulo, pedido) {
     // Freeze primera fila de tabla
     { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: headerRowIdx + 1 } }, fields: 'gridProperties.frozenRowCount' } },
 
-    // Fondo oscuro general (filas de datos)
+    // Fondo blanco general
     { repeatCell: {
       range: { sheetId, startRowIndex: 0, endRowIndex: rows.length, startColumnIndex: 0, endColumnIndex: nCols },
-      cell: { userEnteredFormat: { backgroundColor: NEGRO } },
-      fields: 'userEnteredFormat.backgroundColor'
+      cell: { userEnteredFormat: { backgroundColor: BLANCO, textFormat: { foregroundColor: TEXTO_NEGRO } } },
+      fields: 'userEnteredFormat(backgroundColor,textFormat)'
     }},
 
     // Título principal
@@ -256,12 +258,11 @@ export async function exportarArticuloSheets(articulo, pedido) {
     }},
 
     // Merge título
-    { mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: nCols }, mergeType: 'MERGE_ALL' }},
 
     // Filas de metadata (filas 2-5)
     { repeatCell: {
       range: { sheetId, startRowIndex: 2, endRowIndex: 6, startColumnIndex: 0, endColumnIndex: 1 },
-      cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: { red: 0.6, green: 0.73, blue: 1 } } } },
+      cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: TEXTO_NEGRO } } },
       fields: 'userEnteredFormat.textFormat'
     }},
 
@@ -280,8 +281,8 @@ export async function exportarArticuloSheets(articulo, pedido) {
     { repeatCell: {
       range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: {
-        backgroundColor: GRIS_ROW,
-        textFormat: { foregroundColor: BLANCO },
+        backgroundColor: BLANCO,
+        textFormat: { foregroundColor: TEXTO_NEGRO },
         horizontalAlignment: 'CENTER'
       }},
       fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
@@ -291,7 +292,7 @@ export async function exportarArticuloSheets(articulo, pedido) {
     { repeatCell: {
       range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx, startColumnIndex: 0, endColumnIndex: 1 },
       cell: { userEnteredFormat: {
-        textFormat: { bold: true, foregroundColor: { red: 0.6, green: 0.73, blue: 1 } },
+        textFormat: { bold: true, foregroundColor: TEXTO_NEGRO },
         horizontalAlignment: 'LEFT'
       }},
       fields: 'userEnteredFormat(textFormat,horizontalAlignment)'
@@ -301,8 +302,8 @@ export async function exportarArticuloSheets(articulo, pedido) {
     { repeatCell: {
       range: { sheetId, startRowIndex: totalRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: {
-        backgroundColor: color(30, 37, 71),
-        textFormat: { bold: true, foregroundColor: VERDE_OK },
+        backgroundColor: color(235, 245, 235),
+        textFormat: { bold: true, foregroundColor: TEXTO_NEGRO },
         horizontalAlignment: 'CENTER'
       }},
       fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
@@ -311,12 +312,12 @@ export async function exportarArticuloSheets(articulo, pedido) {
     // Bordes tabla
     { updateBorders: {
       range: { sheetId, startRowIndex: headerRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
-      top:    { style: 'SOLID', color: color(42, 45, 62) },
-      bottom: { style: 'SOLID', color: color(42, 45, 62) },
-      left:   { style: 'SOLID', color: color(42, 45, 62) },
-      right:  { style: 'SOLID', color: color(42, 45, 62) },
-      innerHorizontal: { style: 'SOLID', color: color(42, 45, 62) },
-      innerVertical:   { style: 'SOLID', color: color(42, 45, 62) }
+      top:    { style: 'SOLID', color: color(180, 180, 180) },
+      bottom: { style: 'SOLID', color: color(180, 180, 180) },
+      left:   { style: 'SOLID', color: color(180, 180, 180) },
+      right:  { style: 'SOLID', color: color(180, 180, 180) },
+      innerHorizontal: { style: 'SOLID', color: color(180, 180, 180) },
+      innerVertical:   { style: 'SOLID', color: color(180, 180, 180) }
     }},
 
     // Auto-resize columnas
@@ -426,11 +427,11 @@ export async function exportarRomaneoSheets(pedido, articulos) {
   requests.push(
     { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: headerRowIdx + 1, frozenColumnCount: 4 } }, fields: 'gridProperties(frozenRowCount,frozenColumnCount)' } },
 
-    // Fondo oscuro
+    // Fondo blanco
     { repeatCell: {
       range: { sheetId, startRowIndex: 0, endRowIndex: rows.length, startColumnIndex: 0, endColumnIndex: nCols },
-      cell: { userEnteredFormat: { backgroundColor: NEGRO } },
-      fields: 'userEnteredFormat.backgroundColor'
+      cell: { userEnteredFormat: { backgroundColor: BLANCO, textFormat: { foregroundColor: TEXTO_NEGRO } } },
+      fields: 'userEnteredFormat(backgroundColor,textFormat)'
     }},
 
     // Título
@@ -442,12 +443,11 @@ export async function exportarRomaneoSheets(pedido, articulos) {
       }},
       fields: 'userEnteredFormat(textFormat,backgroundColor)'
     }},
-    { mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: nCols }, mergeType: 'MERGE_ALL' }},
 
     // Metadata labels
     { repeatCell: {
       range: { sheetId, startRowIndex: 2, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 1 },
-      cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: { red: 0.6, green: 0.73, blue: 1 } } } },
+      cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: TEXTO_NEGRO } } },
       fields: 'userEnteredFormat.textFormat'
     }},
 
@@ -466,8 +466,8 @@ export async function exportarRomaneoSheets(pedido, articulos) {
     { repeatCell: {
       range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx - 1, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: {
-        backgroundColor: GRIS_ROW,
-        textFormat: { foregroundColor: BLANCO },
+        backgroundColor: BLANCO,
+        textFormat: { foregroundColor: TEXTO_NEGRO },
         horizontalAlignment: 'CENTER'
       }},
       fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
@@ -483,7 +483,7 @@ export async function exportarRomaneoSheets(pedido, articulos) {
     // Artículo: bold + azul
     { repeatCell: {
       range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx - 1, startColumnIndex: 0, endColumnIndex: 1 },
-      cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: { red: 0.6, green: 0.73, blue: 1 } } } },
+      cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: AZUL_HEADER } } },
       fields: 'userEnteredFormat.textFormat'
     }},
 
@@ -491,8 +491,8 @@ export async function exportarRomaneoSheets(pedido, articulos) {
     { repeatCell: {
       range: { sheetId, startRowIndex: totalRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: {
-        backgroundColor: color(30, 37, 71),
-        textFormat: { bold: true, foregroundColor: VERDE_OK },
+        backgroundColor: color(235, 245, 235),
+        textFormat: { bold: true, foregroundColor: TEXTO_NEGRO },
         horizontalAlignment: 'CENTER'
       }},
       fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
@@ -501,12 +501,12 @@ export async function exportarRomaneoSheets(pedido, articulos) {
     // Bordes
     { updateBorders: {
       range: { sheetId, startRowIndex: headerRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
-      top:    { style: 'SOLID', color: color(42, 45, 62) },
-      bottom: { style: 'SOLID', color: color(42, 45, 62) },
-      left:   { style: 'SOLID', color: color(42, 45, 62) },
-      right:  { style: 'SOLID', color: color(42, 45, 62) },
-      innerHorizontal: { style: 'SOLID', color: color(42, 45, 62) },
-      innerVertical:   { style: 'SOLID', color: color(42, 45, 62) }
+      top:    { style: 'SOLID', color: color(180, 180, 180) },
+      bottom: { style: 'SOLID', color: color(180, 180, 180) },
+      left:   { style: 'SOLID', color: color(180, 180, 180) },
+      right:  { style: 'SOLID', color: color(180, 180, 180) },
+      innerHorizontal: { style: 'SOLID', color: color(180, 180, 180) },
+      innerVertical:   { style: 'SOLID', color: color(180, 180, 180) }
     }},
 
     // Auto-resize
