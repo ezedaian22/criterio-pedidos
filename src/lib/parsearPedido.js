@@ -400,9 +400,10 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             if (vs.toLowerCase() === 'descripcion') colDesc = j
             if (vs.toLowerCase() === 'talle') colTalle = j
             if (vs.toLowerCase().includes('costo f')) colPrecio = j
-            var num = parseInt(vs.replace(/^0+/, '') || vs)
-            if (!isNaN(num) && num >= 0 && num <= 23 && String(parseInt(vs)) === vs.trim().replace(/^0+(\d)/, '$1') || vs.trim() === '0') {
-              colSucs[String(parseInt(vs) || 0)] = j
+            // Detectar columnas de sucursales: 0, 01, 02, ... 23
+            var numSuc = parseInt(vs)
+            if (!isNaN(numSuc) && numSuc >= 0 && numSuc <= 23) {
+              colSucs[String(numSuc)] = j
             }
           })
           break
@@ -423,26 +424,39 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           })
         })
 
-        // Leer curva de talles de la hoja
+        // Leer curva de talles de la hoja (CURVA DE TALLES LAVALLE COMERCIAL)
         var curvaTalles = null
-        for (var i = headerRowIdx + 1; i < rows.length; i++) {
+        for (var i = 0; i < rows.length; i++) {
           var row = rows[i]
           if (!row) continue
+          // Buscar la fila que contiene "curva de talles lavalle"
           var textoFila = row.filter(Boolean).map(String).join(' ').toLowerCase()
-          if (textoFila.includes('curva de talles lavalle')) {
-            // La curva está en las siguientes 2 filas
-            var filaTalles = rows[i+1] || []
-            var filaCants = rows[i+2] || []
-            var tallesHeader = filaTalles.filter(function(v) { return v !== null && v !== '' && !isNaN(parseInt(v)) })
-            var cantsCurva = filaCants.filter(function(v) { return v !== null && v !== '' && !isNaN(parseInt(v)) })
-            if (tallesHeader.length > 0 && cantsCurva.length > 0) {
-              curvaTalles = {}
-              tallesHeader.forEach(function(t, idx) {
-                if (cantsCurva[idx]) curvaTalles[String(t)] = parseInt(cantsCurva[idx])
-              })
+          if (!textoFila.includes('curva de talles lavalle')) continue
+
+          // Los talles están en la misma fila (números mayores a 3 y menores a 20)
+          var tallesConCol = []
+          for (var j = 0; j < row.length; j++) {
+            var v = row[j]
+            if (v === null || v === undefined || v === '') continue
+            var n = parseInt(v)
+            if (!isNaN(n) && n >= 4 && n <= 16 && n % 2 === 0) {
+              tallesConCol.push({ col: j, talle: n })
             }
-            break
           }
+
+          // Las cantidades están en la SIGUIENTE fila, en las mismas columnas
+          var filaCants = rows[i+1] || []
+          if (tallesConCol.length > 0) {
+            curvaTalles = {}
+            tallesConCol.forEach(function(tc) {
+              var cant = parseInt(filaCants[tc.col])
+              if (!isNaN(cant) && cant > 0) {
+                curvaTalles[String(tc.talle)] = cant
+              }
+            })
+            if (Object.keys(curvaTalles).length === 0) curvaTalles = null
+          }
+          break
         }
 
         // Parsear artículos
@@ -472,7 +486,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                 nro_sucursal: nroSuc,
                 cantidad: cant,
                 talles: {},
-                es_entrega_final: nroSuc === '0'
+                es_entrega_final: nroSuc === '0' || nroSuc === 0
               }
             }
           })
@@ -576,7 +590,12 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                 if (!uploadRes.error) {
                   var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
                   if (urlRes.data) {
-                    articulos[codigoHoja].imagen_url = urlRes.data.publicUrl
+                    var imgUrl = urlRes.data.publicUrl
+                    articulos[codigoHoja].imagen_url = imgUrl
+                    // Asignar la misma foto a todas las variantes del artículo
+                    articulos[codigoHoja].variantes.forEach(function(vr) {
+                      if (!vr.imagen_url) vr.imagen_url = imgUrl
+                    })
                   }
                 }
               } catch(imgErr) {
