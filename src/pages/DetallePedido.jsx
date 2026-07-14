@@ -357,23 +357,51 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           </div>
         </div>
 
-        {variantes.length > 0 && (
+        {/* BLOQUE MÓDULO — destacado para Sucati */}
+        {modulos.length > 0 && modulos[0].unidades_por_caja > 0 && (
           <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
-            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.375rem', fontWeight: 600 }}>VARIANTES</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-              {variantes.map(v => (
-                <span key={v.id} style={{ fontSize: '0.75rem', background: '#0f1117', border: '1px solid #2a2d3e', padding: '0.25rem 0.5rem', borderRadius: '0.375rem' }}>
-                  {v.nombre} — <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</span>
-                </span>
-              ))}
+            {/* Cartel módulo */}
+            <div style={{ background: '#1e3a5f', border: '2px solid #3b5bdb', borderRadius: '0.75rem', padding: '0.625rem 0.875rem', marginBottom: '0.625rem', textAlign: 'center' }}>
+              <span style={{ color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '0.95rem', letterSpacing: '0.05em' }}>
+                📦 MÓDULOS DE {modulos[0].unidades_por_caja} UNIDADES
+              </span>
             </div>
+            {/* Curva de talles */}
+            {modulos[0].curva_talles && Object.keys(modulos[0].curva_talles).length > 0 && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                <p style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Curva por módulo:</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                  {Object.entries(modulos[0].curva_talles).map(([t, c]) => (
+                    <span key={t} style={{ fontSize: '0.75rem', background: '#0f1117', border: '1px solid #2a2d3e', padding: '0.15rem 0.4rem', borderRadius: '0.25rem', color: '#c8d8ff', fontFamily: "'Archivo Black', sans-serif" }}>
+                      T{t}:<span style={{ color: 'white' }}>{c}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {modulos.length > 0 && (
+        {variantes.length > 0 && (
           <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
-            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.375rem', fontWeight: 600 }}>MÓDULOS</p>
-            {modulos.map(m => <div key={m.id} style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{m.descripcion} — {m.unidades_por_caja} u/caja</div>)}
+            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Colores / Variantes</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {variantes.map(v => (
+                <div key={v.id} style={{ background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.5rem', padding: '0.375rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                  {v.imagen_url && (
+                    <img
+                      src={v.imagen_url} alt={v.nombre}
+                      onClick={() => onExpandirFoto(v.imagen_url)}
+                      style={{ width: '2.5rem', height: '2.5rem', objectFit: 'cover', borderRadius: '0.25rem', cursor: 'zoom-in', flexShrink: 0 }}
+                    />
+                  )}
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'white' }}>{v.nombre}</div>
+                    <div style={{ fontSize: '0.72rem', color: '#6b7280' }}><span style={{ fontFamily: "'Archivo Black', sans-serif", color: '#93c5fd' }}>{v.cantidad}</span> u</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
