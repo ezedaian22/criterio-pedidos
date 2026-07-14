@@ -259,8 +259,8 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
     setExportandoArt(true)
     setExportArtError(null)
     try {
-      // Armar objeto articulo con las sucursales actuales del estado local
-      const articuloConSucs = { ...articulo, pedido_sucursales: sucursales }
+      // Armar objeto articulo con las sucursales y preparadores actuales del estado local
+      const articuloConSucs = { ...articulo, pedido_sucursales: sucursales, preparadores }
       const url = await exportarArticuloSheets(articuloConSucs, pedido)
       window.open(url, '_blank')
     } catch (err) {
