@@ -96,17 +96,17 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
   }
 
   async function enriquecerConCostos(pedidoIA) {
-    var codigos = (pedidoIA.articulos || []).map(function(a) { return a.codigo_nuestro }).filter(Boolean)
+    var codigos = (pedidoIA.articulos || []).map(function(a) { return String(a.codigo_nuestro) }).filter(Boolean)
     if (codigos.length === 0) return pedidoIA
     try {
       var result = await supabaseCostos.from('articulos').select('codigo, descripcion, foto_url').in('codigo', codigos)
       var mapa = {}
-      if (result.data) result.data.forEach(function(a) { mapa[a.codigo] = a })
+      if (result.data) result.data.forEach(function(a) { mapa[String(a.codigo)] = a })
       return Object.assign({}, pedidoIA, {
         articulos: pedidoIA.articulos.map(function(a) {
           return Object.assign({}, a, {
-            descripcion_correcta: mapa[a.codigo_nuestro] ? mapa[a.codigo_nuestro].descripcion : null,
-            foto_url: mapa[a.codigo_nuestro] ? mapa[a.codigo_nuestro].foto_url : null,
+            descripcion_correcta: mapa[String(a.codigo_nuestro)] ? mapa[String(a.codigo_nuestro)].descripcion : null,
+            foto_url: mapa[String(a.codigo_nuestro)] ? mapa[String(a.codigo_nuestro)].foto_url : null,
           })
         })
       })
@@ -316,11 +316,27 @@ function RevisarPedidos({ parseados, clientes, onEditar, onVolver, onConfirmar, 
             ) : (
               <div className="space-y-3">
                 {/* Cliente */}
-                <div style={{ position: 'relative', zIndex: 10 }}>
+                <div>
                   <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '0.25rem' }}>Cliente</label>
-                  <select className="input" value={p.clienteId || ''} onChange={e => editarCliente(idx, e.target.value)} style={{ cursor: 'pointer', appearance: 'auto' }}>
-                    <option value="">Seleccioná cliente...</option>
-                    {clientes.map(function(c) { return <option key={c.id} value={c.id}>{c.nombre}</option> })}
+                  <select
+                    value={p.clienteId || ''}
+                    onChange={e => editarCliente(idx, e.target.value)}
+                    style={{
+                      background: '#0f1117',
+                      border: '1px solid #2a2d3e',
+                      borderRadius: '0.5rem',
+                      padding: '0.5rem 0.75rem',
+                      color: 'white',
+                      width: '100%',
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="" style={{ background: '#1a1d27', color: 'white' }}>Seleccioná cliente...</option>
+                    {clientes.map(function(c) {
+                      return <option key={c.id} value={c.id} style={{ background: '#1a1d27', color: 'white' }}>{c.nombre}</option>
+                    })}
                   </select>
                 </div>
 
