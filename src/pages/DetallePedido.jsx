@@ -272,15 +272,55 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
 
   return (
     <div className="space-y-4">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button onClick={onVolver} style={{ color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>← Volver</button>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      {/* Header: volver + título + preparadores + sheets */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+          <button onClick={onVolver} style={{ color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>← Volver</button>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <span style={{ fontFamily: "'Archivo Black', sans-serif", color: '#6b8fff', fontWeight: 700, fontSize: '1.125rem' }}>{articulo.codigo_nuestro}</span>
               {articulo.codigo_cliente && <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>({articulo.codigo_cliente})</span>}
             </div>
             <p style={{ fontSize: '0.875rem', color: 'white' }}>{articulo.descripcion_correcta || articulo.descripcion_cliente}</p>
+
+            {/* Preparadores inline */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginTop: '0.375rem', flexWrap: 'wrap', position: 'relative' }}>
+              <span style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Preparó:</span>
+              {preparadores.length === 0
+                ? <span style={{ fontSize: '0.75rem', color: '#4b5563' }}>Sin asignar</span>
+                : preparadores.map(p => (
+                  <span key={p} style={{ fontSize: '0.72rem', background: '#1e2547', border: '1px solid #3b5bdb', borderRadius: '9999px', padding: '0.1rem 0.5rem', color: '#93c5fd', fontWeight: 600 }}>{p}</span>
+                ))
+              }
+              <button
+                onClick={() => setMostrarDropdown(v => !v)}
+                style={{ background: 'none', border: '1px solid #2a2d3e', borderRadius: '0.375rem', padding: '0.1rem 0.4rem', color: '#6b7280', fontSize: '0.7rem', cursor: 'pointer' }}
+              >{mostrarDropdown ? '✕' : '✎'}</button>
+              {guardandoPrep && <span style={{ fontSize: '0.65rem', color: '#3b5bdb' }}>guardando...</span>}
+
+              {/* Dropdown */}
+              {mostrarDropdown && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, background: '#1a1d27', border: '1px solid #2a2d3e', borderRadius: '0.75rem', padding: '0.375rem', marginTop: '0.25rem', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', minWidth: '10rem' }}>
+                  {EMPLEADOS.map(emp => (
+                    <div
+                      key={emp}
+                      onClick={() => togglePreparador(emp)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', padding: '0.45rem 0.625rem', borderRadius: '0.5rem', cursor: 'pointer', background: preparadores.includes(emp) ? '#1e2547' : 'transparent' }}
+                    >
+                      <div style={{
+                        width: '1rem', height: '1rem', borderRadius: '0.2rem', flexShrink: 0,
+                        border: '2px solid ' + (preparadores.includes(emp) ? '#3b5bdb' : '#4b5563'),
+                        background: preparadores.includes(emp) ? '#3b5bdb' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        {preparadores.includes(emp) && <span style={{ color: 'white', fontSize: '0.6rem', fontWeight: 700 }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize: '0.875rem', color: preparadores.includes(emp) ? 'white' : '#9ca3af', fontWeight: preparadores.includes(emp) ? 600 : 400 }}>{emp}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <button onClick={exportarArticulo} disabled={exportandoArt} style={{
