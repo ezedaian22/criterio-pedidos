@@ -236,7 +236,8 @@ export async function exportarArticuloSheets(articulo, pedido) {
   await actualizarHoja(token, spreadsheetId, sheetId, sheetTitle, rows, requests)
 
   // ── Formatos ──
-  const headerRowIdx = 7 // fila 8 (0-indexed) — +1 por fila preparadores
+  // headerRowIdx = índice de la fila del encabezado de tabla (la que tiene "Sucursal", "Cant. Total", etc.)
+  const headerRowIdx = rows.findIndex(r => r[0] === 'Sucursal')
   const dataStart = headerRowIdx + 1
   const dataEnd = dataStart + sucursales.length
   const totalRowIdx = dataEnd
