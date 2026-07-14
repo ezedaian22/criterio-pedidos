@@ -18,7 +18,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
     try {
       const { data, error } = await supabase
         .from('pedidos')
-        .select('*, clientes(nombre), pedido_articulos(id, estado, total_unidades, codigo_nuestro, descripcion_cliente, descripcion_correcta)')
+        .select('*, clientes(nombre), pedido_articulos(id, estado, total_unidades, codigo_nuestro, descripcion_cliente, descripcion_correcta), descuento')
         .order('fecha_entrega', { ascending: true })
       if (error) throw error
       setPedidos(data || [])
