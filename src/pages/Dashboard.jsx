@@ -93,7 +93,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
       <div style={{ display: 'flex', gap: '0.5rem' }}>
         {['activo', 'finalizado', 'todos'].map(f => (
           <button key={f} onClick={() => setFiltro(f)} style={{
-            fontSize: '0.875rem', padding: '0.375rem 0.75rem', borderRadius: '0.5rem', fontWeight: 500, cursor: 'pointer', border: 'none',
+            fontSize: '0.875rem', padding: '0.375rem 0.75rem', borderRadius: '0.5rem', fontWeight: 500, cursor: 'pointer',
             background: filtro === f ? '#3b5bdb' : '#1a1d27',
             color: filtro === f ? 'white' : '#6b7280',
             border: filtro === f ? 'none' : '1px solid #2a2d3e'
