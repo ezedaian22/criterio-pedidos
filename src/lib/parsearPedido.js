@@ -280,12 +280,13 @@ function parsearBalbi(items, textoPDF) {
       .map(function(fi) { return fi.text })
 
     // Precio: numero > 1000 antes de la primera sucursal
+    // Formato PDF Balbi: "9,130.00" — eliminar coma (miles) y parsear float
     var precio = 0
     fila.forEach(function(fi) {
       if (fi.x < xPrimeraSuc && fi !== itemCodigo) {
-        var str = fi.text.replace(/[,.]/g, '')
-        var p = parseInt(str)
-        if (p > 1000) precio = p
+        var str = fi.text.replace(/,/g, '')  // solo sacar comas de miles
+        var p = parseFloat(str)
+        if (!isNaN(p) && p > 1000) precio = Math.round(p)
       }
     })
 
@@ -411,11 +412,18 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
     var articulosBalbi = parsearBalbi(items, textoPDF)
     if (articulosBalbi && articulosBalbi.length > 0) {
       var metaB = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
+      // Extraer descuento del texto del PDF: "Desc.: 20.000%" o "Desc.: 20%"
+      var descuento = 0
+      if (textoPDF) {
+        var mDesc = textoPDF.match(/Desc\.?:\s*([\d.,]+)%/)
+        if (mDesc) descuento = parseFloat(mDesc[1].replace(/,/g, '.'))
+      }
       return {
         cliente_detectado: 'Balbi',
         numero_pedido: metaB.numero_pedido,
         fecha_pedido: metaB.fecha_pedido,
         fecha_entrega: metaB.fecha_entrega,
+        descuento: descuento,
         articulos: articulosBalbi
       }
     }
