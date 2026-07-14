@@ -418,12 +418,27 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
         var mDesc = textoPDF.match(/Desc\.?:\s*([\d.,]+)%/)
         if (mDesc) descuento = parseFloat(mDesc[1].replace(/,/g, '.'))
       }
+      // Detectar razón social por sucursales presentes
+      var todasSucs = []
+      articulosBalbi.forEach(function(art) {
+        art.sucursales.forEach(function(s) {
+          var n = parseInt(s.nro_sucursal)
+          if (todasSucs.indexOf(n) === -1) todasSucs.push(n)
+        })
+      })
+      var tieneRetail = todasSucs.some(function(n) { return n >= 18 && n <= 23 })
+      var tieneHijos  = todasSucs.some(function(n) { return n >= 1  && n <= 17 })
+      var razonSocial = tieneHijos && tieneRetail
+        ? 'E.A. Balbi e Hijos S.A. + Balbi Retail S.A.'
+        : tieneRetail ? 'Balbi Retail S.A.' : 'E.A. Balbi e Hijos S.A.'
+
       return {
         cliente_detectado: 'Balbi',
         numero_pedido: metaB.numero_pedido,
         fecha_pedido: metaB.fecha_pedido,
         fecha_entrega: metaB.fecha_entrega,
         descuento: descuento,
+        razon_social: razonSocial,
         articulos: articulosBalbi
       }
     }
