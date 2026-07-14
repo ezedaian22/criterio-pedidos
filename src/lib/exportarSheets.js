@@ -189,9 +189,11 @@ export async function exportarArticuloSheets(articulo, pedido) {
   const rows = []
   rows.push(['CRITERIO PEDIDOS — Distribución por artículo'])
   rows.push([])
+  const preparadores = (articulo.preparadores || []).join(', ') || 'Sin asignar'
   rows.push(['Cliente', cliente, '', 'Pedido N°', nroPedido])
   rows.push(['Artículo', codigo, '', 'Descripción', descripcion])
   rows.push(['Precio unit.', precio, '', 'Total unid.', articulo.total_unidades || ''])
+  rows.push(['Preparado por', preparadores])
   rows.push([])
 
   // Encabezado tabla
@@ -230,7 +232,7 @@ export async function exportarArticuloSheets(articulo, pedido) {
   await actualizarHoja(token, spreadsheetId, sheetId, sheetTitle, rows, requests)
 
   // ── Formatos ──
-  const headerRowIdx = 6 // fila 7 (0-indexed)
+  const headerRowIdx = 7 // fila 8 (0-indexed) — +1 por fila preparadores
   const dataStart = headerRowIdx + 1
   const dataEnd = dataStart + sucursales.length
   const totalRowIdx = dataEnd
