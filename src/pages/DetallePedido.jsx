@@ -172,10 +172,28 @@ function TarjetaArticulo({ art, onClick, onExpandirFoto }) {
   )
 }
 
+const EMPLEADOS = ['Brian', 'Barto', 'Dario', 'Marcos', 'Meli', 'Luli', 'Maxi', 'Claudia']
+
 function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFoto }) {
   const [sucursales, setSucursales] = useState(articulo.pedido_sucursales || [])
   const [guardando, setGuardando] = useState(null)
   const [mostrarCurva, setMostrarCurva] = useState(true)
+  const [preparadores, setPreparadores] = useState(articulo.preparadores || [])
+  const [mostrarDropdown, setMostrarDropdown] = useState(false)
+  const [guardandoPrep, setGuardandoPrep] = useState(false)
+
+  async function togglePreparador(nombre) {
+    const nuevos = preparadores.includes(nombre)
+      ? preparadores.filter(p => p !== nombre)
+      : [...preparadores, nombre]
+    setPreparadores(nuevos)
+    setGuardandoPrep(true)
+    try {
+      await supabase.from('pedido_articulos').update({ preparadores: nuevos }).eq('id', articulo.id)
+    } catch (err) { console.error(err) }
+    finally { setGuardandoPrep(false) }
+  }
+
   async function editarCantidad(suc, nuevaCantidad) {
     setGuardando(suc.id)
     try {
@@ -328,6 +346,53 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
             {modulos.map(m => <div key={m.id} style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{m.descripcion} — {m.unidades_por_caja} u/caja</div>)}
           </div>
         )}
+        {/* Preparadores */}
+        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <p style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Preparado por {guardandoPrep && <span style={{ color: '#3b5bdb' }}>•</span>}
+            </p>
+            <button
+              onClick={() => setMostrarDropdown(v => !v)}
+              style={{ background: '#1e2547', border: '1px solid #3b5bdb', borderRadius: '0.375rem', padding: '0.2rem 0.6rem', color: '#93c5fd', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {mostrarDropdown ? 'Cerrar' : '+ Editar'}
+            </button>
+          </div>
+
+          {/* Nombres seleccionados */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.375rem', minHeight: '1.5rem' }}>
+            {preparadores.length === 0
+              ? <span style={{ fontSize: '0.8rem', color: '#4b5563' }}>Sin asignar</span>
+              : preparadores.map(p => (
+                <span key={p} style={{ fontSize: '0.8rem', background: '#1e3a5f', border: '1px solid #3b5bdb', borderRadius: '9999px', padding: '0.15rem 0.6rem', color: '#93c5fd', fontWeight: 600 }}>{p}</span>
+              ))
+            }
+          </div>
+
+          {/* Dropdown checklist */}
+          {mostrarDropdown && (
+            <div style={{ position: 'absolute', left: 0, right: 0, zIndex: 10, background: '#1a1d27', border: '1px solid #2a2d3e', borderRadius: '0.75rem', padding: '0.5rem', marginTop: '0.5rem', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+              {EMPLEADOS.map(emp => (
+                <div
+                  key={emp}
+                  onClick={() => togglePreparador(emp)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.625rem', borderRadius: '0.5rem', cursor: 'pointer', background: preparadores.includes(emp) ? '#1e2547' : 'transparent' }}
+                >
+                  <div style={{
+                    width: '1.1rem', height: '1.1rem', borderRadius: '0.25rem', flexShrink: 0,
+                    border: '2px solid ' + (preparadores.includes(emp) ? '#3b5bdb' : '#4b5563'),
+                    background: preparadores.includes(emp) ? '#3b5bdb' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    {preparadores.includes(emp) && <span style={{ color: 'white', fontSize: '0.7rem', fontWeight: 700 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize: '0.9rem', color: preparadores.includes(emp) ? 'white' : '#9ca3af', fontWeight: preparadores.includes(emp) ? 600 : 400 }}>{emp}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Sucursales */}
