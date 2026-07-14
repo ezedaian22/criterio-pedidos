@@ -104,27 +104,33 @@ async function crearSpreadsheet(token, titulo) {
 }
 
 async function actualizarHoja(token, spreadsheetId, sheetId, sheetTitle, rows, requests) {
-  // 1. Escribir datos con el nombre original "Sheet1" (antes de renombrar)
-  const valRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1?valueInputOption=USER_ENTERED`,
+  // Escribir datos + renombrar hoja en un solo batchUpdate
+  // Usamos updateCells para escribir por sheetId (no depende del nombre de la hoja)
+  const cellData = rows.map(row => ({
+    values: row.map(cell => ({
+      userEnteredValue: typeof cell === 'number'
+        ? { numberValue: cell }
+        : { stringValue: cell === null || cell === undefined ? '' : String(cell) }
+    }))
+  }))
+
+  requests.push(
+    // Renombrar hoja
     {
-      method: 'PUT',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: toValues(rows) })
+      updateSheetProperties: {
+        properties: { sheetId, title: sheetTitle },
+        fields: 'title'
+      }
+    },
+    // Escribir datos por sheetId (no depende del nombre)
+    {
+      updateCells: {
+        start: { sheetId, rowIndex: 0, columnIndex: 0 },
+        rows: cellData,
+        fields: 'userEnteredValue'
+      }
     }
   )
-  if (!valRes.ok) {
-    const errText = await valRes.text()
-    throw new Error('Error escribiendo datos: ' + valRes.status + ' — ' + errText)
-  }
-
-  // 2. Renombrar hoja (se aplica en el batchUpdate de formatos junto con el resto)
-  requests.push({
-    updateSheetProperties: {
-      properties: { sheetId, title: sheetTitle },
-      fields: 'title'
-    }
-  })
 
   return requests
 }
@@ -214,7 +220,7 @@ export async function exportarArticuloSheets(articulo, pedido) {
   const sheet = await crearSpreadsheet(token, titulo)
   const spreadsheetId = sheet.spreadsheetId
   const sheetId = sheet.sheets[0].properties.sheetId
-  const sheetTitle = 'Distribución'
+  const sheetTitle = 'Distribucion'
 
   let requests = []
 
