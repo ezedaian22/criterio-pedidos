@@ -182,7 +182,7 @@ export async function exportarArticuloSheets(articulo, pedido) {
 
   // Filas de datos
   const sucursales = (articulo.pedido_sucursales || [])
-    .filter(s => !s.es_entrega_final && s.cantidad > 0)
+    .filter(s => s.cantidad > 0)
     .sort((a, b) => Number(a.nro_sucursal) - Number(b.nro_sucursal))
 
   // Encabezado con info del artículo (filas de metadata)
@@ -204,19 +204,34 @@ export async function exportarArticuloSheets(articulo, pedido) {
   const headerRow = ['Sucursal', 'Cant. Total', ...talles.map(t => 'T' + t), 'Estado', 'Cajas', 'Fecha final.']
   rows.push(headerRow)
 
-  // Filas de sucursales
-  sucursales.forEach(suc => {
-    rows.push([
-      'Suc. ' + suc.nro_sucursal,
-      suc.cantidad,
-      ...talles.map(t => (suc.talles && suc.talles[t]) ? suc.talles[t] : 0),
-      suc.estado === 'finalizado' ? 'Finalizado' : suc.estado === 'guardado' ? 'Guardado' : suc.estado === 'separado' ? 'Separado' : 'Pendiente',
-      suc.nro_cajas || '',
-      suc.fecha_finalizacion
-        ? new Date(suc.fecha_finalizacion).toLocaleDateString('es-AR')
-        : ''
-    ])
-  })
+  // Filas de sucursales — separar Sucati (1-9) y Chandal (10-23) si corresponde
+  const esSucati = razonSocial && (razonSocial.includes('SUCATI') || razonSocial.includes('CHANDAL'))
+  const sucsSucati = sucursales.filter(s => { const n = Number(s.nro_sucursal); return n >= 1 && n <= 9 })
+  const sucsChandal = sucursales.filter(s => { const n = Number(s.nro_sucursal); return n >= 10 && n <= 23 })
+  const sucsOtras = sucursales.filter(s => { const n = Number(s.nro_sucursal); return n < 1 || (n > 23) })
+
+  const filaEstado = (suc) => [
+    'Suc. ' + suc.nro_sucursal,
+    suc.cantidad,
+    ...talles.map(t => (suc.talles && suc.talles[t]) ? suc.talles[t] : 0),
+    suc.estado === 'finalizado' ? 'Finalizado' : suc.estado === 'guardado' ? 'Guardado' : suc.estado === 'separado' ? 'Separado' : 'Pendiente',
+    suc.nro_cajas || '',
+    suc.fecha_finalizacion ? new Date(suc.fecha_finalizacion).toLocaleDateString('es-AR') : ''
+  ]
+
+  if (esSucati && (sucsSucati.length > 0 || sucsChandal.length > 0)) {
+    if (sucsSucati.length > 0) {
+      rows.push(['— SUCATI S.R.L. —', '', ...talles.map(() => ''), '', '', ''])
+      sucsSucati.forEach(suc => rows.push(filaEstado(suc)))
+    }
+    if (sucsChandal.length > 0) {
+      rows.push(['— CHANDAL S.R.L. —', '', ...talles.map(() => ''), '', '', ''])
+      sucsChandal.forEach(suc => rows.push(filaEstado(suc)))
+    }
+    sucsOtras.forEach(suc => rows.push(filaEstado(suc)))
+  } else {
+    sucursales.forEach(suc => rows.push(filaEstado(suc)))
+  }
 
   // Fila total
   const totalCantidad = sucursales.reduce((s, x) => s + (x.cantidad || 0), 0)
@@ -398,7 +413,7 @@ export async function exportarRomaneoSheets(pedido, articulos) {
       ? '$' + Number(art.precio_unitario).toLocaleString('es-AR')
       : ''
     const sucucursales = (art.pedido_sucursales || [])
-      .filter(s => !s.es_entrega_final && s.cantidad > 0)
+      .filter(s => s.cantidad > 0)
       .sort((a, b) => Number(a.nro_sucursal) - Number(b.nro_sucursal))
 
     sucucursales.forEach((suc, idx) => {
