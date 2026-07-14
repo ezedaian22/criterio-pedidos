@@ -150,7 +150,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
       cliente_id: parseInt(clienteId),
       numero_pedido: parseado.numero_pedido,
       fecha_pedido: parseado.fecha_pedido,
-      fecha_entrega: parseado.fecha_entrega,
+      fecha_entrega: parseado.fecha_entrega || parseado.fecha_pedido || new Date().toISOString().split('T')[0],
       estado: 'activo',
       descuento: parseado.descuento || 0,
       razon_social: parseado.razon_social || null,
