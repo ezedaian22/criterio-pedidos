@@ -236,3 +236,4 @@ function TarjetaPedido({ pedido, onClick, busqueda, onEliminar }) {
     </div>
   )
 }
+
