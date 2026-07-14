@@ -366,16 +366,22 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         var ws = wb.Sheets[sheetName]
         var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false })
 
-        // Extraer fechas
+        // Extraer fechas — buscar por etiqueta y tomar la celda siguiente no-nula
         var fechaPedido = null, fechaEntregaDesde = null, fechaEntregaHasta = null
-        for (var i = 0; i < Math.min(6, rows.length); i++) {
+        for (var i = 0; i < Math.min(7, rows.length); i++) {
           var row = rows[i]
           for (var j = 0; j < row.length; j++) {
             var v = row[j]; if (!v) continue
-            var vs = String(v).toLowerCase().trim()
-            if (vs === 'del:' && row[j+1]) fechaEntregaDesde = formatearFechaXLS(row[j+1])
-            if (vs === 'al:' && row[j+1]) fechaEntregaHasta = formatearFechaXLS(row[j+1])
-            if (vs === 'fecha' && row[j+1] && !fechaPedido) fechaPedido = formatearFechaXLS(row[j+1])
+            var vs = String(v).toLowerCase().trim().replace(/\s+/g, ' ')
+            // Buscar siguiente celda no-nula después de la etiqueta
+            var siguienteVal = null
+            for (var k = j+1; k < row.length; k++) {
+              if (row[k] !== null && row[k] !== '') { siguienteVal = row[k]; break }
+            }
+            if (!siguienteVal) continue
+            if (vs === 'del:' || vs === 'del') fechaEntregaDesde = formatearFechaXLS(siguienteVal)
+            if (vs === 'al:' || vs === 'al') fechaEntregaHasta = formatearFechaXLS(siguienteVal)
+            if (vs === 'fecha' && !fechaPedido) fechaPedido = formatearFechaXLS(siguienteVal)
           }
         }
 
