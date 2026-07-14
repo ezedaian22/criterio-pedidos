@@ -364,13 +364,12 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         }) || wb.SheetNames[0]
 
         var ws = wb.Sheets[sheetName]
-        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false })
+        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, dateNF: 'yyyy-mm-dd' })
 
         // Extraer fechas — buscar por etiqueta y tomar la celda siguiente no-nula
         var fechaPedido = null, fechaEntregaDesde = null, fechaEntregaHasta = null
         for (var i = 0; i < Math.min(7, rows.length); i++) {
           var row = rows[i]
-          console.log('SUCATI FILA ' + i + ':', JSON.stringify(row.slice(0,10)))
           for (var j = 0; j < row.length; j++) {
             var v = row[j]; if (!v) continue
             var vs = String(v).toLowerCase().trim().replace(/\s+/g, ' ')
@@ -378,14 +377,6 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             for (var k = j+1; k < row.length; k++) {
               if (row[k] !== null && row[k] !== '' && row[k] !== undefined) { siguienteVal = row[k]; break }
             }
-            console.log('  vs=' + JSON.stringify(vs) + ' sig=' + JSON.stringify(siguienteVal))
-            if (!siguienteVal) continue
-            if (vs.startsWith('del')) { fechaEntregaDesde = formatearFechaXLS(siguienteVal); console.log('DEL:', fechaEntregaDesde) }
-            if (vs.startsWith('al')) { fechaEntregaHasta = formatearFechaXLS(siguienteVal); console.log('AL:', fechaEntregaHasta) }
-            if (vs === 'fecha' && !fechaPedido) { fechaPedido = formatearFechaXLS(siguienteVal); console.log('FECHA:', fechaPedido) }
-          }
-        }
-        console.log('FECHAS FINALES:', fechaPedido, fechaEntregaDesde, fechaEntregaHasta)
 
         // Encontrar fila encabezado
         var headerRowIdx = -1
@@ -626,17 +617,27 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
 
 function formatearFechaXLS(val) {
   if (!val) return null
-  // Si ya es un objeto Date
-  if (val instanceof Date) {
-    return val.toISOString().split('T')[0]
+  // Objeto Date nativo
+  if (val instanceof Date && !isNaN(val)) {
+    var y = val.getFullYear(), m = val.getMonth()+1, d = val.getDate()
+    return y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0')
   }
-  // Si es string con formato datetime
-  var s = String(val)
-  var m = s.match(/(\d{4})-(\d{2})-(\d{2})/)
-  if (m) return m[1] + '-' + m[2] + '-' + m[3]
-  // Formato dd/mm/yyyy
-  var m2 = s.match(/(\d{2})\/(\d{2})\/(\d{4})/)
-  if (m2) return m2[3] + '-' + m2[2] + '-' + m2[1]
+  var s = String(val).trim()
+  // yyyy-mm-dd
+  var m1 = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m1) return m1[1] + '-' + m1[2] + '-' + m1[3]
+  // d/m/yyyy o dd/mm/yyyy (SheetJS raw:false)
+  var m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (m2) return m2[3] + '-' + String(m2[2]).padStart(2,'0') + '-' + String(m2[1]).padStart(2,'0')
+  // dd-mm-yyyy
+  var m3 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/)
+  if (m3) return m3[3] + '-' + String(m3[2]).padStart(2,'0') + '-' + String(m3[1]).padStart(2,'0')
+  // Número serial de Excel (días desde 1900)
+  var n = parseFloat(s)
+  if (!isNaN(n) && n > 40000 && n < 60000) {
+    var d = new Date(Date.UTC(1900, 0, 1) + (n - 1) * 86400000)
+    return d.toISOString().split('T')[0]
+  }
   return null
 }
 
