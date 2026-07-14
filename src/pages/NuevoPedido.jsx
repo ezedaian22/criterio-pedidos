@@ -153,6 +153,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
       fecha_entrega: parseado.fecha_entrega,
       estado: 'activo',
       descuento: parseado.descuento || 0,
+      razon_social: parseado.razon_social || null,
     }).select().single()
 
     if (pedRes.error) throw pedRes.error
