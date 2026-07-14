@@ -51,7 +51,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
       setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + archivos.length + ': ' + archivo.name + '...')
 
       try {
-        var resultado = await parsearArchivoPedido(archivo, '')
+        var resultado = await parsearArchivoPedido(archivo, '', supabase)
         var enriquecido = await enriquecerConCostos(resultado)
 
         // Auto-detectar cliente: primero desde el campo cliente_detectado de la IA, luego por nombre de archivo
@@ -167,7 +167,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
         codigo_cliente: art.codigo_cliente,
         descripcion_cliente: art.descripcion_cliente,
         descripcion_correcta: art.descripcion_correcta,
-        foto_url: art.foto_url,
+        foto_url: art.foto_url || art.imagen_url || null,
         precio_unitario: art.precio_unitario,
         total_unidades: art.total_unidades,
         curva_talles: art.curva_talles || null,
