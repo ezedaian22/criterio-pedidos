@@ -370,20 +370,22 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         var fechaPedido = null, fechaEntregaDesde = null, fechaEntregaHasta = null
         for (var i = 0; i < Math.min(7, rows.length); i++) {
           var row = rows[i]
+          console.log('SUCATI FILA ' + i + ':', JSON.stringify(row.slice(0,10)))
           for (var j = 0; j < row.length; j++) {
             var v = row[j]; if (!v) continue
             var vs = String(v).toLowerCase().trim().replace(/\s+/g, ' ')
-            // Buscar siguiente celda no-nula después de la etiqueta
             var siguienteVal = null
             for (var k = j+1; k < row.length; k++) {
-              if (row[k] !== null && row[k] !== '') { siguienteVal = row[k]; break }
+              if (row[k] !== null && row[k] !== '' && row[k] !== undefined) { siguienteVal = row[k]; break }
             }
+            console.log('  vs=' + JSON.stringify(vs) + ' sig=' + JSON.stringify(siguienteVal))
             if (!siguienteVal) continue
-            if (vs === 'del:' || vs === 'del') fechaEntregaDesde = formatearFechaXLS(siguienteVal)
-            if (vs === 'al:' || vs === 'al') fechaEntregaHasta = formatearFechaXLS(siguienteVal)
-            if (vs === 'fecha' && !fechaPedido) fechaPedido = formatearFechaXLS(siguienteVal)
+            if (vs.startsWith('del')) { fechaEntregaDesde = formatearFechaXLS(siguienteVal); console.log('DEL:', fechaEntregaDesde) }
+            if (vs.startsWith('al')) { fechaEntregaHasta = formatearFechaXLS(siguienteVal); console.log('AL:', fechaEntregaHasta) }
+            if (vs === 'fecha' && !fechaPedido) { fechaPedido = formatearFechaXLS(siguienteVal); console.log('FECHA:', fechaPedido) }
           }
         }
+        console.log('FECHAS FINALES:', fechaPedido, fechaEntregaDesde, fechaEntregaHasta)
 
         // Encontrar fila encabezado
         var headerRowIdx = -1
