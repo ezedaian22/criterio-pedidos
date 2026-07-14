@@ -2,7 +2,7 @@ import React from 'react'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatFecha, alertaFecha, pct } from '../lib/utils'
-import { exportarArticuloSheets, exportarRomaneoSheets } from '../lib/exportarSheets'
+import { exportarArticuloSheets } from '../lib/exportarSheets'
 
 export default function DetallePedido({ session, pedido, onVolver }) {
   const [articulos, setArticulos] = useState([])
@@ -10,9 +10,6 @@ export default function DetallePedido({ session, pedido, onVolver }) {
   const [artSeleccionado, setArtSeleccionado] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [fotoExpandida, setFotoExpandida] = useState(null)
-  const [exportandoRomaneo, setExportandoRomaneo] = useState(false)
-  const [exportError, setExportError] = useState(null)
-
   useEffect(() => { cargarArticulos() }, [pedido.id])
 
   async function cargarArticulos() {
@@ -27,19 +24,6 @@ export default function DetallePedido({ session, pedido, onVolver }) {
       setArticulos(data || [])
     } catch (err) { console.error(err) }
     finally { setCargando(false) }
-  }
-
-  async function exportarSheets() {
-    setExportandoRomaneo(true)
-    setExportError(null)
-    try {
-      const url = await exportarRomaneoSheets(pedido, articulos)
-      window.open(url, '_blank')
-    } catch (err) {
-      setExportError(err.message || 'Error al exportar')
-    } finally {
-      setExportandoRomaneo(false)
-    }
   }
 
   const alerta = alertaFecha(pedido.fecha_entrega)
@@ -75,31 +59,13 @@ export default function DetallePedido({ session, pedido, onVolver }) {
       {fotoExpandida && <ModalFoto url={fotoExpandida} onClose={() => setFotoExpandida(null)} />}
       <div className="space-y-5">
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <button onClick={onVolver} style={{ color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>← Volver</button>
-            <div>
-              <h1 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{pedido.clientes?.nombre}</h1>
-              {pedido.numero_pedido && <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>#{pedido.numero_pedido}</p>}
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button onClick={onVolver} style={{ color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>← Volver</button>
+          <div>
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{pedido.clientes?.nombre}</h1>
+            {pedido.numero_pedido && <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>#{pedido.numero_pedido}</p>}
           </div>
-          <button onClick={exportarSheets} disabled={exportandoRomaneo} style={{
-            background: exportandoRomaneo ? '#14532d' : '#166534',
-            color: '#86efac', border: '1px solid #15803d',
-            borderRadius: '0.5rem', padding: '0.375rem 0.75rem', fontSize: '0.75rem',
-            fontWeight: 600, cursor: exportandoRomaneo ? 'not-allowed' : 'pointer', flexShrink: 0,
-            opacity: exportandoRomaneo ? 0.7 : 1
-          }}>
-            {exportandoRomaneo ? '⏳ Subiendo...' : '📊 Romaneo → Sheets'}
-          </button>
         </div>
-
-        {exportError && (
-          <div style={{ background: '#1c0a0a', border: '1px solid #b91c1c', borderRadius: '0.5rem', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#f87171', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>⚠️ {exportError}</span>
-            <button onClick={() => setExportError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>✕</button>
-          </div>
-        )}
 
         {/* Info pedido */}
         <div className="card" style={{
@@ -210,6 +176,15 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
   const [sucursales, setSucursales] = useState(articulo.pedido_sucursales || [])
   const [guardando, setGuardando] = useState(null)
   const [mostrarCurva, setMostrarCurva] = useState(true)
+  async function editarCantidad(suc, nuevaCantidad) {
+    setGuardando(suc.id)
+    try {
+      await supabase.from('pedido_sucursales').update({ cantidad: nuevaCantidad }).eq('id', suc.id)
+      setSucursales(prev => prev.map(s => s.id === suc.id ? { ...s, cantidad: nuevaCantidad } : s))
+    } catch (err) { console.error(err) }
+    finally { setGuardando(null) }
+  }
+
   const [exportandoArt, setExportandoArt] = useState(false)
   const [exportArtError, setExportArtError] = useState(null)
   const variantes = articulo.pedido_articulo_variantes || []
@@ -298,6 +273,13 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
         }}>{exportandoArt ? '⏳' : '📊 → Sheets'}</button>
       </div>
 
+      {exportArtError && (
+        <div style={{ background: '#1c0a0a', border: '1px solid #b91c1c', borderRadius: '0.5rem', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#f87171', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>⚠️ {exportArtError}</span>
+          <button onClick={() => setExportArtError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+        </div>
+      )}
+
       {/* Info artículo */}
       <div className="card">
         <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -352,14 +334,14 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
       <div className="space-y-2">
         <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Sucursales</h2>
         {sucsNormales.filter(s => s.cantidad > 0).map(suc => (
-          <FilaSucursal key={suc.id} suc={suc} onAvanzar={() => avanzarEstado(suc)} onGuardarCajas={n => guardarCajas(suc, n)} cargando={guardando === suc.id} />
+          <FilaSucursal key={suc.id} suc={suc} onAvanzar={() => avanzarEstado(suc)} onGuardarCajas={n => guardarCajas(suc, n)} onEditarCantidad={n => editarCantidad(suc, n)} cargando={guardando === suc.id} />
         ))}
       </div>
 
       {suc0 && (
         <div className="space-y-2">
           <h2 style={{ fontSize: '0.75rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Sucursal 0 — Entrega final</h2>
-          <FilaSucursal suc={suc0} especial bloqueada={!todasNormalesOk} onAvanzar={() => avanzarEstado(suc0)} onGuardarCajas={n => finalizarSuc0(n)} cargando={guardando === suc0.id} />
+          <FilaSucursal suc={suc0} especial bloqueada={!todasNormalesOk} onAvanzar={() => avanzarEstado(suc0)} onGuardarCajas={n => finalizarSuc0(n)} onEditarCantidad={n => editarCantidad(suc0, n)} cargando={guardando === suc0.id} />
           {!todasNormalesOk && <p style={{ fontSize: '0.75rem', color: '#c084fc' }}>Se habilita cuando todas las sucursales estén listas.</p>}
         </div>
       )}
@@ -392,14 +374,23 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
   )
 }
 
-function FilaSucursal({ suc, onAvanzar, onGuardarCajas, cargando, especial, bloqueada }) {
+function FilaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargando, especial, bloqueada }) {
   const [cajasInput, setCajasInput] = useState(suc.nro_cajas ? String(suc.nro_cajas) : '')
+  const [editandoCantidad, setEditandoCantidad] = useState(false)
+  const [cantidadInput, setCantidadInput] = useState(String(suc.cantidad))
   const config = {
     pendiente:  { label: 'Pendiente',  color: '#6b7280', btnLabel: 'Separado ✓', btnBg: '#1e3a5f', btnColor: '#93c5fd' },
     separado:   { label: 'Separado',   color: '#60a5fa', btnLabel: 'Guardado ✓', btnBg: '#451a03', btnColor: '#fcd34d' },
     guardado:   { label: 'Guardado',   color: '#facc15', btnLabel: null },
     finalizado: { label: 'Finalizado', color: '#4ade80', btnLabel: null },
   }[suc.estado] || {}
+
+  function confirmarCantidad() {
+    const nueva = parseInt(cantidadInput)
+    if (!nueva || nueva < 0) return
+    onEditarCantidad(nueva)
+    setEditandoCantidad(false)
+  }
 
   return (
     <div style={{
@@ -422,11 +413,32 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, cargando, especial, bloq
 
       {/* Info */}
       <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <span style={{ color: config.color, fontWeight: 600, fontSize: '0.875rem' }}>{config.label}</span>
-          <span style={{ fontFamily: "'Archivo Black', sans-serif", color: '#ffffff', fontWeight: 700, fontSize: '1.1rem' }}>
-            {suc.cantidad}<span style={{ fontSize: '0.75rem', color: '#a0aec0', fontWeight: 400 }}> u</span>
-          </span>
+          {/* Cantidad editable (solo si no está finalizado) */}
+          {suc.estado !== 'finalizado' && editandoCantidad ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <input
+                type="number" min="0"
+                value={cantidadInput}
+                onChange={e => setCantidadInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmarCantidad(); if (e.key === 'Escape') setEditandoCantidad(false) }}
+                autoFocus
+                style={{ width: '4rem', background: '#0f1117', border: '1px solid #3b5bdb', borderRadius: '0.375rem', padding: '0.125rem 0.375rem', color: 'white', fontSize: '1rem', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, textAlign: 'center' }}
+              />
+              <span style={{ fontSize: '0.75rem', color: '#a0aec0' }}>u</span>
+              <button onClick={confirmarCantidad} style={{ background: '#3b5bdb', color: 'white', border: 'none', borderRadius: '0.375rem', padding: '0.125rem 0.5rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>✓</button>
+              <button onClick={() => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(false) }} style={{ background: 'none', color: '#6b7280', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>✕</button>
+            </div>
+          ) : (
+            <span
+              onClick={suc.estado !== 'finalizado' ? () => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(true) } : undefined}
+              title={suc.estado !== 'finalizado' ? 'Tocar para editar cantidad' : ''}
+              style={{ fontFamily: "'Archivo Black', sans-serif", color: '#ffffff', fontWeight: 700, fontSize: '1.1rem', cursor: suc.estado !== 'finalizado' ? 'pointer' : 'default', borderBottom: suc.estado !== 'finalizado' ? '1px dashed #3b5bdb' : 'none' }}
+            >
+              {suc.cantidad}<span style={{ fontSize: '0.75rem', color: '#a0aec0', fontWeight: 400 }}> u</span>
+            </span>
+          )}
         </div>
         {/* Talles por sucursal */}
         {suc.talles && Object.keys(suc.talles).length > 0 && (
