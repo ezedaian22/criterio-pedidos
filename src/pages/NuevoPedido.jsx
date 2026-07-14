@@ -97,18 +97,16 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
 
   async function enriquecerConCostos(pedidoIA) {
     var codigos = (pedidoIA.articulos || []).map(function(a) { return String(a.codigo_nuestro) }).filter(Boolean)
+    console.log('CODIGOS A BUSCAR:', codigos)
     if (codigos.length === 0) return pedidoIA
     try {
-      // Obtener la temporada activa
-      var tempResult = await supabaseCostos.from('temporadas').select('id').eq('activa', true).limit(1)
-      var temporadaId = tempResult.data && tempResult.data[0] ? tempResult.data[0].id : null
-
-      var query = supabaseCostos.from('articulos').select('codigo, descripcion, foto_url').in('codigo', codigos)
-      if (temporadaId) query = query.eq('temporada_id', temporadaId)
-
-      var result = await query
+      var result = await supabaseCostos.from('articulos').select('codigo, descripcion, foto_url').in('codigo', codigos)
+      console.log('RESULTADO COSTOS:', result.data, 'ERROR:', result.error)
       var mapa = {}
-      if (result.data) result.data.forEach(function(a) { mapa[String(a.codigo)] = a })
+      if (result.data) {
+        result.data.slice().reverse().forEach(function(a) { mapa[String(a.codigo)] = a })
+      }
+      console.log('MAPA:', mapa)
       return Object.assign({}, pedidoIA, {
         articulos: pedidoIA.articulos.map(function(a) {
           var key = String(a.codigo_nuestro)
