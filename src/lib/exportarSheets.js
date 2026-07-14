@@ -190,9 +190,11 @@ export async function exportarArticuloSheets(articulo, pedido) {
   rows.push(['CRITERIO PEDIDOS — Distribución por artículo'])
   rows.push([])
   const preparadores = (articulo.preparadores || []).join(', ') || 'Sin asignar'
+  const descuento = pedido.descuento ? pedido.descuento + '%' : ''
   rows.push(['Cliente', cliente, '', 'Pedido N°', nroPedido])
   rows.push(['Artículo', codigo, '', 'Descripción', descripcion])
   rows.push(['Precio unit.', precio, '', 'Total unid.', articulo.total_unidades || ''])
+  if (descuento) rows.push(['Descuento', descuento])
   rows.push(['Preparado por', preparadores])
   rows.push([])
 
@@ -353,6 +355,7 @@ export async function exportarRomaneoSheets(pedido, articulos) {
   const fechaPedido = pedido.fecha_pedido
     ? new Date(pedido.fecha_pedido).toLocaleDateString('es-AR')
     : ''
+  const descuentoPedido = pedido.descuento ? pedido.descuento + '%' : ''
 
   // Recolectar todos los talles presentes en todos los artículos
   const tallesSet = new Set()
@@ -370,11 +373,12 @@ export async function exportarRomaneoSheets(pedido, articulos) {
   rows.push([])
   rows.push(['Cliente', cliente, '', 'N° Pedido', nroPedido])
   rows.push(['Fecha pedido', fechaPedido, '', 'Fecha entrega', fechaEntrega])
+  if (descuentoPedido) rows.push(['Descuento', descuentoPedido])
   rows.push([])
 
   // Encabezado tabla
   const headerRow = [
-    'Artículo', 'Cód. Cliente', 'Descripción', 'Precio Unit.',
+    'Artículo', 'Cód. Cliente', 'Descripción', 'Precio Unit.', 'Descuento',
     'Sucursal', 'Cant. Suc.',
     ...talles.map(t => 'T' + t),
     'Total Artículo'
@@ -398,6 +402,7 @@ export async function exportarRomaneoSheets(pedido, articulos) {
         idx === 0 ? (art.codigo_cliente || '') : '',
         idx === 0 ? (art.descripcion_correcta || art.descripcion_cliente || '') : '',
         idx === 0 ? precio : '',
+        idx === 0 ? descuentoPedido : '',
         'Suc. ' + suc.nro_sucursal,
         suc.cantidad,
         ...talles.map(t => (suc.talles && suc.talles[t]) ? suc.talles[t] : 0),
