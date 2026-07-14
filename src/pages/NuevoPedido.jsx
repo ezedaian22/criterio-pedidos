@@ -188,7 +188,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
 
       if (art.variantes && art.variantes.length) {
         var varData = art.variantes.map(function(v) {
-          return { pedido_articulo_id: artDB.id, nombre: v.nombre, cantidad: v.cantidad_total }
+          return { pedido_articulo_id: artDB.id, nombre: v.nombre, cantidad: v.cantidad || v.cantidad_total || 0 }
         })
         await supabase.from('pedido_articulo_variantes').insert(varData)
       }
