@@ -709,19 +709,23 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
     }
   }
 
-  // Detectar si es Sucati (XLS)
+  // Detectar si es XLS/XLSX (Sucati)
   var esXLS = archivo.name.toLowerCase().endsWith('.xls') || archivo.name.toLowerCase().endsWith('.xlsx')
-  var esSucati = false
-  if (esXLS) {
-    var nombreLower = archivo.name.toLowerCase()
-    esSucati = nombreLower.includes('suc') || nombreLower.includes('sucati') || nombreLower.includes('lavalle_comercial')
-  }
 
-  if (esSucati && window.XLSX) {
+  if (esXLS) {
+    // Cargar SheetJS dinámicamente si no está disponible
+    if (!window.XLSX) {
+      await new Promise(function(resolve, reject) {
+        var s = document.createElement('script')
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+        s.onload = resolve
+        s.onerror = function() { reject(new Error('No se pudo cargar SheetJS')) }
+        document.head.appendChild(s)
+      })
+    }
     try {
       var sucatiData = await parsearSucatiXLS(archivo)
       if (sucatiData && sucatiData.articulos && sucatiData.articulos.length > 0) {
-        // Numero de pedido: usar fecha del pedido como referencia (Sucati no tiene nro de pedido)
         var nroPedidoSucati = sucatiData.fechaPedido ? sucatiData.fechaPedido.replace(/-/g, '') : null
         return {
           cliente_detectado: 'Sucati',
@@ -733,11 +737,11 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
         }
       }
     } catch(e) {
-      console.error('Error parseando Sucati:', e)
+      throw new Error('Error leyendo XLS de Sucati: ' + e.message)
     }
   }
 
-  // Fallback: IA interpreta todo
+  // Fallback: IA interpreta todo (solo para PDFs no reconocidos)
   return await llamarIA(apiKey, base64, mimeType, textoPDF, false)
 }
 
