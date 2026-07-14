@@ -99,18 +99,27 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
     var codigos = (pedidoIA.articulos || []).map(function(a) { return String(a.codigo_nuestro) }).filter(Boolean)
     if (codigos.length === 0) return pedidoIA
     try {
-      var result = await supabaseCostos.from('articulos').select('codigo, descripcion, foto_url').in('codigo', codigos)
+      // Obtener la temporada activa
+      var tempResult = await supabaseCostos.from('temporadas').select('id').eq('activa', true).limit(1)
+      var temporadaId = tempResult.data && tempResult.data[0] ? tempResult.data[0].id : null
+
+      var query = supabaseCostos.from('articulos').select('codigo, descripcion, foto_url').in('codigo', codigos)
+      if (temporadaId) query = query.eq('temporada_id', temporadaId)
+
+      var result = await query
       var mapa = {}
       if (result.data) result.data.forEach(function(a) { mapa[String(a.codigo)] = a })
       return Object.assign({}, pedidoIA, {
         articulos: pedidoIA.articulos.map(function(a) {
+          var key = String(a.codigo_nuestro)
           return Object.assign({}, a, {
-            descripcion_correcta: mapa[String(a.codigo_nuestro)] ? mapa[String(a.codigo_nuestro)].descripcion : null,
-            foto_url: mapa[String(a.codigo_nuestro)] ? mapa[String(a.codigo_nuestro)].foto_url : null,
+            descripcion_correcta: mapa[key] ? mapa[key].descripcion : null,
+            foto_url: mapa[key] ? mapa[key].foto_url : null,
           })
         })
       })
     } catch(e) {
+      console.error('Error enriqueciendo con costos:', e)
       return pedidoIA
     }
   }
