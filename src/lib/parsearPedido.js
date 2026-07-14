@@ -346,11 +346,11 @@ function expandirRangoTalles(talleStr) {
   return talles
 }
 
-async function parsearSucatiXLS(archivo) {
-  // Usar SheetJS (XLSX) que ya está disponible en el browser
+async function parsearSucatiXLS(archivo, supabaseClient) {
+  // Usar SheetJS (XLSX) para leer el XLS en el browser
   return new Promise(function(resolve, reject) {
     var reader = new FileReader()
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
         var XLSX = window.XLSX
         if (!XLSX) { reject(new Error('SheetJS no disponible')); return }
@@ -358,108 +358,116 @@ async function parsearSucatiXLS(archivo) {
         var data = new Uint8Array(e.target.result)
         var wb = XLSX.read(data, { type: 'array', cellDates: true })
 
-        // Buscar la hoja "NOTA DE PEDIDO" (la que tiene las cantidades reales)
+        // Buscar hoja NOTA DE PEDIDO (no la original)
         var sheetName = wb.SheetNames.find(function(n) {
-          return n.toLowerCase() === 'nota de pedido' && !n.toLowerCase().includes('original')
+          return n.toLowerCase().includes('nota de pedido') && !n.toLowerCase().includes('original')
         }) || wb.SheetNames[0]
 
         var ws = wb.Sheets[sheetName]
         var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false })
 
-        // Extraer fechas (filas 1-4, índice 0-3)
-        var fechaPedido = null
-        var fechaEntregaDesde = null
-        var fechaEntregaHasta = null
+        // Extraer fechas
+        var fechaPedido = null, fechaEntregaDesde = null, fechaEntregaHasta = null
         for (var i = 0; i < Math.min(6, rows.length); i++) {
           var row = rows[i]
           for (var j = 0; j < row.length; j++) {
-            var v = row[j]
-            if (!v) continue
-            var vs = String(v).toLowerCase()
-            if (vs.includes('del:') || (vs === 'del:' && row[j+1])) {
-              var d = row[j+1]
-              if (d) fechaEntregaDesde = formatearFechaXLS(d)
-            }
-            if (vs.includes('al:') && row[j+1]) {
-              var a = row[j+1]
-              if (a) fechaEntregaHasta = formatearFechaXLS(a)
-            }
-            if (vs.includes('fecha') && !vs.includes('entrega') && row[j+1]) {
-              var fp = row[j+1]
-              if (fp) fechaPedido = formatearFechaXLS(fp)
-            }
+            var v = row[j]; if (!v) continue
+            var vs = String(v).toLowerCase().trim()
+            if (vs === 'del:' && row[j+1]) fechaEntregaDesde = formatearFechaXLS(row[j+1])
+            if (vs === 'al:' && row[j+1]) fechaEntregaHasta = formatearFechaXLS(row[j+1])
+            if (vs === 'fecha' && row[j+1] && !fechaPedido) fechaPedido = formatearFechaXLS(row[j+1])
           }
         }
 
-        // Encontrar fila de encabezado (tiene "Cod prov")
+        // Encontrar fila encabezado
         var headerRowIdx = -1
         var colCodProv = -1, colDesc = -1, colTalle = -1, colPrecio = -1
-        var colSucs = {} // nro_sucursal -> col index
-        
+        var colSucs = {}
+
         for (var i = 0; i < rows.length; i++) {
           var row = rows[i]
-          var hasCodProv = row.some(function(v) { return v && String(v).toLowerCase().includes('cod prov') })
-          if (!hasCodProv) continue
+          if (!row.some(function(v) { return v && String(v).toLowerCase().includes('cod prov') })) continue
           headerRowIdx = i
           row.forEach(function(v, j) {
             if (!v) return
-            var vs = String(v).trim().toLowerCase()
-            if (vs.includes('cod prov') || vs === 'cod prov') colCodProv = j
-            if (vs.includes('descripcion') || vs === 'descripcion') colDesc = j
-            if (vs.includes('talle')) colTalle = j
-            if (vs.includes('costo f') || vs === 'costo f.') colPrecio = j
-            // Columnas de sucursales: valores numéricos 0-23 o strings "01"-"23"
-            var num = parseInt(vs)
-            if (!isNaN(num) && num >= 0 && num <= 23 && String(num) === vs.replace(/^0+/, '') || vs === '0') {
-              colSucs[String(num)] = j
+            var vs = String(v).trim()
+            if (vs.toLowerCase().includes('cod prov')) colCodProv = j
+            if (vs.toLowerCase() === 'descripcion') colDesc = j
+            if (vs.toLowerCase() === 'talle') colTalle = j
+            if (vs.toLowerCase().includes('costo f')) colPrecio = j
+            var num = parseInt(vs.replace(/^0+/, '') || vs)
+            if (!isNaN(num) && num >= 0 && num <= 23 && String(parseInt(vs)) === vs.trim().replace(/^0+(\d)/, '$1') || vs.trim() === '0') {
+              colSucs[String(parseInt(vs) || 0)] = j
             }
           })
           break
         }
 
         if (headerRowIdx === -1 || colCodProv === -1) {
-          reject(new Error('No se encontró encabezado en el XLS'))
-          return
+          reject(new Error('No se encontró encabezado en el XLS')); return
         }
 
-        // Parsear artículos (filas después del encabezado, hasta TOTAL)
+        // Leer unidades por módulo de la hoja (buscar "MODULOS X NN UNIDADES")
+        var unidadesPorModulo = null
+        rows.forEach(function(row) {
+          if (!row) return
+          row.forEach(function(v) {
+            if (!v) return
+            var m = String(v).match(/m[oó]dulos?\s+x\s*(\d+)\s+unidades/i)
+            if (m) unidadesPorModulo = parseInt(m[1])
+          })
+        })
+
+        // Leer curva de talles de la hoja
+        var curvaTalles = null
+        for (var i = headerRowIdx + 1; i < rows.length; i++) {
+          var row = rows[i]
+          if (!row) continue
+          var textoFila = row.filter(Boolean).map(String).join(' ').toLowerCase()
+          if (textoFila.includes('curva de talles lavalle')) {
+            // La curva está en las siguientes 2 filas
+            var filaTalles = rows[i+1] || []
+            var filaCants = rows[i+2] || []
+            var tallesHeader = filaTalles.filter(function(v) { return v !== null && v !== '' && !isNaN(parseInt(v)) })
+            var cantsCurva = filaCants.filter(function(v) { return v !== null && v !== '' && !isNaN(parseInt(v)) })
+            if (tallesHeader.length > 0 && cantsCurva.length > 0) {
+              curvaTalles = {}
+              tallesHeader.forEach(function(t, idx) {
+                if (cantsCurva[idx]) curvaTalles[String(t)] = parseInt(cantsCurva[idx])
+              })
+            }
+            break
+          }
+        }
+
+        // Parsear artículos
         var articulos = {}
-        var variantesPorArt = {} // codigo -> [{nombre, cantidad}]
+        var articulosOrden = []
 
         for (var i = headerRowIdx + 1; i < rows.length; i++) {
           var row = rows[i]
           if (!row || !row[colCodProv]) continue
+          var codVal = String(row[colCodProv]).trim()
+          if (!codVal || codVal.toLowerCase().includes('total') || isNaN(parseInt(codVal))) continue
 
-          var codProvVal = String(row[colCodProv]).trim()
-          // Detectar fila TOTAL o fila de módulo (texto, no número)
-          if (codProvVal.toLowerCase().includes('total') || 
-              isNaN(parseInt(codProvVal)) ||
-              codProvVal.toLowerCase().includes('modulo') ||
-              codProvVal.toLowerCase() === 'x50' ||
-              codProvVal.toLowerCase() === 'x30' ||
-              codProvVal.toLowerCase() === 'x24') continue
-
-          var codigo = codProvVal
+          var codigo = codVal
           var descripcion = row[colDesc] ? String(row[colDesc]).trim() : ''
           var talleStr = row[colTalle] ? String(row[colTalle]).trim() : ''
           var precio = row[colPrecio] ? parseFloat(String(row[colPrecio]).replace(/,/g, '')) : 0
 
-          // Expandir talles: "6/12" → talles Sucati → convertir a Lavalle
           var tallesSucati = expandirRangoTalles(talleStr)
           var tallesLavalle = tallesSucati.map(convertirTalleSucati)
 
-          // Leer cantidades por sucursal
           var sucursalesArt = {}
           Object.keys(colSucs).forEach(function(nroSuc) {
             var colIdx = colSucs[nroSuc]
             var cant = parseInt(row[colIdx])
             if (!isNaN(cant) && cant > 0) {
-              var esEntregaFinal = nroSuc === '0'
               sucursalesArt[nroSuc] = {
                 nro_sucursal: nroSuc,
                 cantidad: cant,
-                talles: {}, // Sucati no divide por talle en la tabla principal
-                es_entrega_final: esEntregaFinal
+                talles: {},
+                es_entrega_final: nroSuc === '0'
               }
             }
           })
@@ -472,85 +480,124 @@ async function parsearSucatiXLS(archivo) {
               precio_unitario: precio,
               talles_articulo: tallesLavalle,
               sucursales: sucursalesArt,
-              total_unidades: 0,
-              modulos: [],
-              variantes: []
+              total_unidades: Object.values(sucursalesArt).reduce(function(s,x){return s+x.cantidad},0),
+              modulos: unidadesPorModulo ? [{ descripcion: 'Módulo x' + unidadesPorModulo + ' unidades', unidades_por_caja: unidadesPorModulo, curva_talles: curvaTalles }] : [],
+              variantes: [],
+              imagen_url: null
             }
+            articulosOrden.push(codigo)
           }
-
-          // Sumar total
-          var art = articulos[codigo]
-          art.total_unidades = Object.values(sucursalesArt).reduce(function(s, x) { return s + x.cantidad }, 0)
         }
 
-        // Leer variantes/módulos de las filas debajo del encabezado de artículos
-        // Formato: "MÓDULO ART XXXX / X NN UNIDADES" seguido de filas con nombre_variante | unidades
+        // Leer variantes de los módulos (debajo del encabezado)
         var artActual = null
         for (var i = headerRowIdx + 1; i < rows.length; i++) {
           var row = rows[i]
           if (!row) continue
-          var textoFila = row.filter(Boolean).map(function(v) { return String(v) }).join(' ').toLowerCase()
-          
-          // Detectar línea de módulo
-          var mModulo = textoFila.match(/m[oó]dulo\s+art\s+(\d+)/i)
-          if (mModulo) {
-            artActual = mModulo[1]
-            continue
-          }
+          var textFila = row.filter(Boolean).map(String).join(' ')
 
-          // Si estamos en un módulo, leer variantes
+          var mMod = textFila.match(/m[oó]dulo\s+art\s+(\d+)/i)
+          if (mMod) { artActual = mMod[1]; continue }
+
           if (artActual && articulos[artActual]) {
-            // Buscar patrón: nombre_color | cantidades (ej: "Jet Black | 30 UNIDADES")
-            var primerNoVacio = row.find(function(v) { return v !== null && v !== '' })
-            if (!primerNoVacio) { artActual = null; continue }
-            
-            var nombre = String(primerNoVacio).trim()
-            // Ignorar filas de talles (solo números)
+            var primerVal = row.find(function(v) { return v !== null && v !== '' })
+            if (!primerVal) { artActual = null; continue }
+            var nombre = String(primerVal).trim()
             if (/^\d+$/.test(nombre)) continue
-            // Ignorar si es otra sección
-            if (nombre.toLowerCase().includes('modulo') || 
-                nombre.toLowerCase().includes('cantidad') ||
-                nombre.toLowerCase().includes('curva') ||
-                nombre.toLowerCase().includes('entrega') ||
-                nombre.toLowerCase().includes('observ')) {
-              artActual = null
-              continue
-            }
+            var ignorar = ['modulo','cantidad','curva','entrega','observ','total','revisar','horario','facturar','proveedor','tel','condic','mail']
+            if (ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
 
-            // Buscar cantidad en la fila
-            var cantVariante = 0
-            for (var j = 0; j < row.length; j++) {
+            var cantVar = 0
+            for (var j = 1; j < row.length; j++) {
               if (!row[j]) continue
-              var vs = String(row[j]).toLowerCase().replace(/[^0-9]/g, '')
-              if (vs && !isNaN(parseInt(vs)) && parseInt(vs) > 0 && j > 0) {
-                cantVariante = parseInt(vs)
-                break
-              }
+              var numStr = String(row[j]).replace(/[^0-9]/g, '')
+              if (numStr && parseInt(numStr) > 0) { cantVar = parseInt(numStr); break }
             }
-
-            if (nombre && cantVariante > 0) {
-              articulos[artActual].variantes.push({ nombre: nombre, cantidad: cantVariante })
+            if (nombre && cantVar > 0) {
+              articulos[artActual].variantes.push({ nombre: nombre, cantidad: cantVar, imagen_url: null })
             }
           }
         }
 
-        // Convertir a array y detectar razón social
-        var resultado = Object.values(articulos).map(function(art) {
+        // Extraer imágenes de las hojas por artículo y subirlas a Supabase Storage
+        if (supabaseClient) {
+          for (var shIdx = 0; shIdx < wb.SheetNames.length; shIdx++) {
+            var sName = wb.SheetNames[shIdx]
+            // Hojas de variante: nombre es código de artículo o nombre de tela
+            var codigoHoja = null
+            // Buscar si el nombre de hoja coincide con un código
+            if (articulos[sName]) codigoHoja = sName
+            // O buscar por nombre parcial en la descripción
+            if (!codigoHoja) {
+              Object.keys(articulos).forEach(function(cod) {
+                if (!codigoHoja && (
+                  sName.toLowerCase().includes(cod.toLowerCase()) ||
+                  articulos[cod].descripcion_cliente.toLowerCase().split(' ').some(function(w) {
+                    return w.length > 3 && sName.toLowerCase().includes(w)
+                  })
+                )) codigoHoja = cod
+              })
+            }
+            if (!codigoHoja) continue
+
+            // Obtener imágenes de la hoja via SheetJS
+            var wsImg = wb.Sheets[sName]
+            if (!wsImg['!images'] || wsImg['!images'].length === 0) continue
+
+            var imgs = wsImg['!images']
+            // Tomar la imagen más grande (la foto del artículo)
+            var imgPrincipal = imgs.reduce(function(best, img) {
+              var sz = (img.data || '').length
+              return sz > ((best.data || '').length) ? img : best
+            }, imgs[0])
+
+            if (imgPrincipal && imgPrincipal.data) {
+              try {
+                // imgPrincipal.data es base64 en SheetJS
+                var imgData = imgPrincipal.data
+                var ext = imgPrincipal.type || 'png'
+                var fileName = 'sucati/' + codigoHoja + '_' + Date.now() + '.' + ext
+                
+                // Convertir base64 a Uint8Array
+                var binary = atob(imgData)
+                var bytes = new Uint8Array(binary.length)
+                for (var b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b)
+                var blob = new Blob([bytes], { type: 'image/' + ext })
+
+                var uploadRes = await supabaseClient.storage
+                  .from('pedidos-variantes')
+                  .upload(fileName, blob, { contentType: 'image/' + ext, upsert: true })
+
+                if (!uploadRes.error) {
+                  var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
+                  if (urlRes.data) {
+                    articulos[codigoHoja].imagen_url = urlRes.data.publicUrl
+                  }
+                }
+              } catch(imgErr) {
+                console.error('Error subiendo imagen:', imgErr)
+              }
+            }
+          }
+        }
+
+        // Detectar razón social
+        var resultado = articulosOrden.map(function(cod) {
+          var art = articulos[cod]
           art.sucursales = Object.values(art.sucursales)
-            .sort(function(a, b) { return Number(a.nro_sucursal) - Number(b.nro_sucursal) })
+            .sort(function(a,b){ return Number(a.nro_sucursal)-Number(b.nro_sucursal) })
           return art
         })
 
-        // Razón social: suc 1-9 = SUCATI, suc 10-23 y suc 0 = CHANDAL
         var todasSucs = []
         resultado.forEach(function(art) {
-          art.sucursales.forEach(function(s) { 
+          art.sucursales.forEach(function(s) {
             var n = parseInt(s.nro_sucursal)
             if (todasSucs.indexOf(n) === -1) todasSucs.push(n)
           })
         })
-        var tieneSucati  = todasSucs.some(function(n) { return n >= 1 && n <= 9 })
-        var tieneChandal = todasSucs.some(function(n) { return n === 0 || (n >= 10 && n <= 23) })
+        var tieneSucati  = todasSucs.some(function(n){ return n >= 1 && n <= 9 })
+        var tieneChandal = todasSucs.some(function(n){ return n === 0 || (n >= 10 && n <= 23) })
         var razonSocial = tieneSucati && tieneChandal
           ? 'SUCATI S.R.L. + CHANDAL S.R.L.'
           : tieneChandal ? 'CHANDAL S.R.L.' : 'SUCATI S.R.L.'
@@ -562,9 +609,7 @@ async function parsearSucatiXLS(archivo) {
           fechaEntregaHasta: fechaEntregaHasta,
           razonSocial: razonSocial
         })
-      } catch(err) {
-        reject(err)
-      }
+      } catch(err) { reject(err) }
     }
     reader.onerror = function() { reject(new Error('Error leyendo archivo')) }
     reader.readAsArrayBuffer(archivo)
@@ -628,7 +673,7 @@ async function llamarIA(apiKey, base64, mimeType, textoPDF, soloMeta) {
   return parsed
 }
 
-export async function parsearArchivoPedido(archivo, clienteNombre) {
+export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClient) {
   var apiKey = localStorage.getItem('criterio_anthropic_key')
   if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
 
@@ -724,7 +769,7 @@ export async function parsearArchivoPedido(archivo, clienteNombre) {
       })
     }
     try {
-      var sucatiData = await parsearSucatiXLS(archivo)
+      var sucatiData = await parsearSucatiXLS(archivo, supabaseClient)
       if (sucatiData && sucatiData.articulos && sucatiData.articulos.length > 0) {
         var nroPedidoSucati = sucatiData.fechaPedido ? sucatiData.fechaPedido.replace(/-/g, '') : null
         return {
