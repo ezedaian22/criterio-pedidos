@@ -74,7 +74,7 @@ export default function Ajustes({ session, onVolver, onLogout }) {
         <div style={{ background: '#0f1117', borderRadius: '0.5rem', padding: '0.75rem', fontSize: '0.75rem', color: '#9ca3af', lineHeight: 1.6 }}>
           <p style={{ fontWeight: 600, color: '#c8d8ff', marginBottom: '0.25rem' }}>Cómo obtener el Client ID:</p>
           <p>1. Entrá a <span style={{ color: '#6b8fff' }}>console.cloud.google.com</span></p>
-          <p>2. APIs &amp; Services → Credentials → Create OAuth 2.0 Client ID</p>
+          <p>2. APIs &amp; Services {'->'} Credentials {'->'} Create OAuth 2.0 Client ID</p>
           <p>3. Tipo: <strong style={{ color: 'white' }}>Web application</strong></p>
           <p>4. Origins: <code style={{ color: '#86efac' }}>https://criterio-pedidos.vercel.app</code></p>
           <p>5. Habilitá: <em>Google Sheets API</em> y <em>Google Drive API</em></p>
