@@ -8,6 +8,8 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [cargando, setCargando] = useState(true)
   const [filtro, setFiltro] = useState('activo')
   const [busqueda, setBusqueda] = useState('')
+  const [confirmarEliminar, setConfirmarEliminar] = useState(null) // pedido a eliminar
+  const [eliminando, setEliminando] = useState(false)
 
   useEffect(() => { cargarPedidos() }, [])
 
@@ -22,6 +24,25 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
       setPedidos(data || [])
     } catch (err) { console.error(err) }
     finally { setCargando(false) }
+  }
+
+  async function eliminarPedido(pedido) {
+    setEliminando(true)
+    try {
+      // Borrar en cascada: sucursales → variantes → módulos → artículos → pedido
+      const { data: arts } = await supabase.from('pedido_articulos').select('id').eq('pedido_id', pedido.id)
+      const artIds = (arts || []).map(a => a.id)
+      if (artIds.length > 0) {
+        await supabase.from('pedido_sucursales').delete().in('pedido_articulo_id', artIds)
+        await supabase.from('pedido_articulo_variantes').delete().in('pedido_articulo_id', artIds)
+        await supabase.from('pedido_modulos').delete().in('pedido_articulo_id', artIds)
+        await supabase.from('pedido_articulos').delete().eq('pedido_id', pedido.id)
+      }
+      await supabase.from('pedidos').delete().eq('id', pedido.id)
+      setConfirmarEliminar(null)
+      await cargarPedidos()
+    } catch (err) { console.error(err) }
+    finally { setEliminando(false) }
   }
 
   const busquedaLower = busqueda.toLowerCase()
@@ -114,14 +135,35 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {pedidosFiltrados.map(p => <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower} />)}
+          {pedidosFiltrados.map(p => <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower} onEliminar={() => setConfirmarEliminar(p)} />)}
+        </div>
+      )}
+      {/* Modal confirmar eliminación */}
+      {confirmarEliminar && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ background: '#1a1d27', border: '1px solid #b91c1c', borderRadius: '1rem', padding: '1.5rem', maxWidth: '22rem', width: '100%' }}>
+            <h2 style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '0.5rem' }}>¿Eliminar pedido?</h2>
+            <p style={{ color: '#9ca3af', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+              <span style={{ color: 'white', fontWeight: 600 }}>{confirmarEliminar.clientes?.nombre}</span>
+              {confirmarEliminar.numero_pedido && <span> #{confirmarEliminar.numero_pedido}</span>}
+              <br />Esta acción no se puede deshacer.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button onClick={() => setConfirmarEliminar(null)} style={{ flex: 1, background: '#0f1117', color: '#9ca3af', border: '1px solid #2a2d3e', borderRadius: '0.5rem', padding: '0.625rem', fontWeight: 600, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={() => eliminarPedido(confirmarEliminar)} disabled={eliminando} style={{ flex: 1, background: '#7f1d1d', color: '#fca5a5', border: '1px solid #b91c1c', borderRadius: '0.5rem', padding: '0.625rem', fontWeight: 600, cursor: eliminando ? 'not-allowed' : 'pointer', opacity: eliminando ? 0.7 : 1 }}>
+                {eliminando ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function TarjetaPedido({ pedido, onClick, busqueda }) {
+function TarjetaPedido({ pedido, onClick, busqueda, onEliminar }) {
   const articulos = pedido.pedido_articulos || []
   const total = articulos.length
   const finalizados = articulos.filter(a => a.estado === 'finalizado').length
@@ -138,10 +180,8 @@ function TarjetaPedido({ pedido, onClick, busqueda }) {
   const borderColor = alerta === 'vencido' ? '#b91c1c' : alerta === 'proximo' ? '#b45309' : '#2a2d3e'
 
   return (
-    <div onClick={onClick} style={{
-      background: '#1a1d27', border: '1px solid ' + borderColor,
-      borderRadius: '0.75rem', padding: '1rem', cursor: 'pointer'
-    }}>
+    <div style={{ background: '#1a1d27', border: '1px solid ' + borderColor, borderRadius: '0.75rem', padding: '1rem', position: 'relative' }}>
+      <div onClick={onClick} style={{ cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -186,6 +226,13 @@ function TarjetaPedido({ pedido, onClick, busqueda }) {
           <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>{progreso}% completado</div>
         </div>
       )}
+      </div>
+      {/* Botón eliminar */}
+      <button
+        onClick={e => { e.stopPropagation(); onEliminar() }}
+        style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', background: 'none', border: 'none', color: '#4b5563', cursor: 'pointer', fontSize: '1rem', padding: '0.25rem', lineHeight: 1, borderRadius: '0.25rem' }}
+        title="Eliminar pedido"
+      >🗑️</button>
     </div>
   )
 }
