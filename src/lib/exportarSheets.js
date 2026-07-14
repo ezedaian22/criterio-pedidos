@@ -104,25 +104,27 @@ async function crearSpreadsheet(token, titulo) {
 }
 
 async function actualizarHoja(token, spreadsheetId, sheetId, sheetTitle, rows, requests) {
-  // 1. Renombrar hoja
-  requests.push({
-    updateSheetProperties: {
-      properties: { sheetId, title: sheetTitle },
-      fields: 'title'
-    }
-  })
-
-  // 2. Escribir datos (batchUpdate values)
-  const range = sheetTitle + '!A1'
+  // 1. Escribir datos con el nombre original "Sheet1" (antes de renombrar)
   const valRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: JSON.stringify({ values: toValues(rows) })
     }
   )
-  if (!valRes.ok) throw new Error('Error escribiendo datos: ' + valRes.status)
+  if (!valRes.ok) {
+    const errText = await valRes.text()
+    throw new Error('Error escribiendo datos: ' + valRes.status + ' — ' + errText)
+  }
+
+  // 2. Renombrar hoja (se aplica en el batchUpdate de formatos junto con el resto)
+  requests.push({
+    updateSheetProperties: {
+      properties: { sheetId, title: sheetTitle },
+      fields: 'title'
+    }
+  })
 
   return requests
 }
