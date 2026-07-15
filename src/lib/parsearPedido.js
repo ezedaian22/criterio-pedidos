@@ -838,4 +838,5 @@ function fileToBase64(file) {
     reader.onerror = function() { reject(new Error('No se pudo leer el archivo')) }
     reader.readAsDataURL(file)
   })
+  
 }
