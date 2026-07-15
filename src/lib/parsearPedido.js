@@ -852,6 +852,36 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   var apiKey = localStorage.getItem('criterio_anthropic_key')
   if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
 
+  // Para XLS/XLSX ir directo al parser de Sucati sin pasar por fileToBase64
+  var esXLS = archivo.name.toLowerCase().endsWith('.xls') || archivo.name.toLowerCase().endsWith('.xlsx')
+  if (esXLS) {
+    if (!window.XLSX) {
+      await new Promise(function(resolve, reject) {
+        var s = document.createElement('script')
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+        s.onload = resolve
+        s.onerror = function() { reject(new Error('No se pudo cargar SheetJS')) }
+        document.head.appendChild(s)
+      })
+    }
+    try {
+      var sucatiData = await parsearSucatiXLS(archivo, supabaseClient)
+      if (sucatiData && sucatiData.articulos && sucatiData.articulos.length > 0) {
+        var nroPedidoSucati = sucatiData.fechaPedido ? sucatiData.fechaPedido.replace(/-/g, '') : null
+        return {
+          cliente_detectado: 'Sucati',
+          numero_pedido: nroPedidoSucati,
+          fecha_pedido: sucatiData.fechaPedido,
+          fecha_entrega: sucatiData.fechaEntregaHasta || sucatiData.fechaEntregaDesde,
+          razon_social: sucatiData.razonSocial,
+          articulos: sucatiData.articulos
+        }
+      }
+    } catch(e) {
+      throw new Error('Error leyendo XLS de Sucati: ' + e.message)
+    }
+  }
+
   var base64 = await fileToBase64(archivo)
   var mimeType = getMimeType(archivo)
   var esPDF = archivo.type === 'application/pdf'
@@ -926,38 +956,6 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
         razon_social: razonSocial,
         articulos: articulosBalbi
       }
-    }
-  }
-
-  // Detectar si es XLS/XLSX (Sucati)
-  var esXLS = archivo.name.toLowerCase().endsWith('.xls') || archivo.name.toLowerCase().endsWith('.xlsx')
-
-  if (esXLS) {
-    // Cargar SheetJS dinámicamente si no está disponible
-    if (!window.XLSX) {
-      await new Promise(function(resolve, reject) {
-        var s = document.createElement('script')
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
-        s.onload = resolve
-        s.onerror = function() { reject(new Error('No se pudo cargar SheetJS')) }
-        document.head.appendChild(s)
-      })
-    }
-    try {
-      var sucatiData = await parsearSucatiXLS(archivo, supabaseClient)
-      if (sucatiData && sucatiData.articulos && sucatiData.articulos.length > 0) {
-        var nroPedidoSucati = sucatiData.fechaPedido ? sucatiData.fechaPedido.replace(/-/g, '') : null
-        return {
-          cliente_detectado: 'Sucati',
-          numero_pedido: nroPedidoSucati,
-          fecha_pedido: sucatiData.fechaPedido,
-          fecha_entrega: sucatiData.fechaEntregaHasta || sucatiData.fechaEntregaDesde,
-          razon_social: sucatiData.razonSocial,
-          articulos: sucatiData.articulos
-        }
-      }
-    } catch(e) {
-      throw new Error('Error leyendo XLS de Sucati: ' + e.message)
     }
   }
 
