@@ -105,8 +105,8 @@ export default function App() {
         {pagina === 'dashboard' && (
           <Dashboard
             session={session}
-            onNuevoPedido={(archivoPreconvertido) => {
-              setArchivoParaNuevo(archivoPreconvertido || null)
+            onNuevoPedido={(archivo) => {
+              setArchivoParaNuevo(archivo || null)
               setPagina('nuevo')
             }}
             onVerPedido={(p) => irA('detalle', p)}
