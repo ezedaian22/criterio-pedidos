@@ -14,6 +14,28 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [xlsxFile, setXlsxFile] = useState(null)
   const [xlsxNombre, setXlsxNombre] = useState('')
 
+  async function convertirXLS(f) {
+    setConvirtiendo(true)
+    try {
+      if (!window.XLSX) {
+        await new Promise(function(resolve, reject) {
+          var s = document.createElement('script')
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+          s.onload = resolve; s.onerror = reject
+          document.head.appendChild(s)
+        })
+      }
+      var buf = await f.arrayBuffer()
+      var wb = window.XLSX.read(new Uint8Array(buf), { type: 'array', cellStyles: true, cellDates: true })
+      var arr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      var blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      var nombre = f.name.slice(0, -4) + '.xlsx'
+      setXlsxFile(new File([blob], nombre, { type: blob.type }))
+      setXlsxNombre(nombre)
+    } catch(err) { console.error(err) }
+    finally { setConvirtiendo(false) }
+  }
+
   useEffect(() => { cargarPedidos() }, [])
 
   async function cargarPedidos() {
@@ -136,29 +158,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
               {!xlsxFile ? (
                 <label style={{ display: 'block', background: '#1a1d27', border: '1px dashed #b45309', borderRadius: '0.5rem', padding: '0.625rem', textAlign: 'center', cursor: convirtiendo ? 'not-allowed' : 'pointer', color: '#fcd34d', fontSize: '0.8rem' }}>
                   {convirtiendo ? '⏳ Convirtiendo...' : '📂 Paso 1 — Seleccionar .xls de Sucati'}
-                  <input type="file" accept=".xls" disabled={convirtiendo} style={{ display: 'none' }} onChange={async e => {
-                    const f = e.target.files[0]
-                    if (!f) return
-                    setConvirtiendo(true)
-                    try {
-                      if (!window.XLSX) {
-                        await new Promise((res, rej) => {
-                          const s = document.createElement('script')
-                          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
-                          s.onload = res; s.onerror = rej
-                          document.head.appendChild(s)
-                        })
-                      }
-                      const buf = await f.arrayBuffer()
-                      const wb = window.XLSX.read(new Uint8Array(buf), { type: 'array', cellStyles: true, cellDates: true })
-                      const arr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-                      const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-                      const nombre = f.name.slice(0, -4) + '.xlsx'
-                      setXlsxFile(new File([blob], nombre, { type: blob.type }))
-                      setXlsxNombre(nombre)
-                    } catch(e) { console.error(e) }
-                    finally { setConvirtiendo(false) }
-                  }} />
+                  <input type="file" accept=".xls" disabled={convirtiendo} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) convertirXLS(e.target.files[0]) }} />
                 </label>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
