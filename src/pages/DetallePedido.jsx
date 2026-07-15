@@ -429,17 +429,20 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                 const esEstampa = v.es_estampa || /dns|vte|estampa/i.test(v.nombre || '')
                 const color = esEstampa ? null : colorDeNombre(v.nombre)
                 return (
-                  <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', minWidth: '5rem' }}>
-                    {/* Círculo de color o ícono de estampa */}
-                    <div style={{ background: esEstampa ? '#1e2547' : color, height: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {esEstampa
-                        ? <span style={{ fontSize: '1.5rem' }}>🎨</span>
-                        : <div style={{ width: '2rem', height: '2rem', borderRadius: '50%', background: color, border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 0 0 1px rgba(0,0,0,0.3)' }} />
+                  <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', minWidth: '5rem', maxWidth: '7rem' }}>
+                    {/* Imagen de estampa o círculo de color */}
+                    <div style={{ height: '4rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: esEstampa ? '#111' : color, overflow: 'hidden', cursor: v.imagen_url ? 'zoom-in' : 'default' }}
+                      onClick={() => v.imagen_url && onExpandirFoto(v.imagen_url)}>
+                      {v.imagen_url
+                        ? <img src={v.imagen_url} alt={v.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : esEstampa
+                          ? <span style={{ fontSize: '1.75rem' }}>🎨</span>
+                          : <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: color, border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 0 0 1px rgba(0,0,0,0.3)' }} />
                       }
                     </div>
                     {/* Nombre y cantidad */}
                     <div style={{ background: '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'white', lineHeight: 1.2 }}>{v.nombre}</div>
+                      <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'white', lineHeight: 1.2 }}>{v.nombre}</div>
                       <div style={{ fontSize: '0.65rem', color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</div>
                     </div>
                   </div>
