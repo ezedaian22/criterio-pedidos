@@ -10,34 +10,6 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [busqueda, setBusqueda] = useState('')
   const [confirmarEliminar, setConfirmarEliminar] = useState(null) // pedido a eliminar
   const [eliminando, setEliminando] = useState(false)
-  const [mostrarInstrucciones, setMostrarInstrucciones] = useState(false)
-  const [convirtiendo, setConvirtiendo] = useState(false)
-  const [xlsxUrl, setXlsxUrl] = useState(null)
-  const [xlsxNombre, setXlsxNombre] = useState('')
-
-  async function convertirXLS(archivo) {
-    if (!archivo) return
-    setConvirtiendo(true)
-    setXlsxUrl(null)
-    try {
-      if (!window.XLSX) {
-        await new Promise(function(resolve, reject) {
-          var s = document.createElement('script')
-          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
-          s.onload = resolve; s.onerror = reject
-          document.head.appendChild(s)
-        })
-      }
-      var buf = await archivo.arrayBuffer()
-      var wb = window.XLSX.read(new Uint8Array(buf), { type: 'array', cellStyles: true, cellDates: true })
-      var out = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-      var blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      var url = URL.createObjectURL(blob)
-      setXlsxUrl(url)
-      setXlsxNombre(archivo.name.slice(0, -4) + '.xlsx')
-    } catch(e) { console.error(e) }
-    finally { setConvirtiendo(false) }
-  }
 
   useEffect(() => { cargarPedidos() }, [])
 
@@ -132,14 +104,11 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
 
       {/* Banner instrucciones + conversor */}
       <div style={{ background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.75rem', overflow: 'hidden' }}>
-        <button
-          onClick={() => setMostrarInstrucciones(v => !v)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.875rem', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '0.8rem' }}>
-          <span>📋 Instrucciones para cargar pedidos</span>
-          <span>{mostrarInstrucciones ? '▲' : '▼'}</span>
-        </button>
-        {mostrarInstrucciones && (
-          <div style={{ padding: '0 0.875rem 0.875rem', borderTop: '1px solid #2a2d3e' }}>
+        <div style={{ padding: '0.625rem 0.875rem', borderBottom: '1px solid #2a2d3e' }}>
+          <span style={{ color: '#9ca3af', fontSize: '0.8rem' }}>📋 Instrucciones para cargar pedidos</span>
+        </div>
+        <div>
+          <div style={{ padding: '0 0.875rem 0.875rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.625rem' }}>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
                 <span style={{ flexShrink: 0 }}>🟢</span>
@@ -150,27 +119,15 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
                 <div><span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>Balbi</span><span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — subir el PDF como viene</span></div>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                <span style={{ flexShrink: 0 }}>🟡</span>
+                <span style={{ flexShrink: 0 }}>🟢</span>
                 <div>
                   <span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>Sucati</span>
-                  <span style={{ color: '#fcd34d', fontSize: '0.75rem' }}> — convertir el XLS a .xlsx antes de subir (usar el conversor de abajo)</span>
+                  <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — subir el archivo .xls como viene (se convierte automáticamente)</span>
                 </div>
               </div>
             </div>
-            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
-              <p style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Conversor XLS → XLSX</p>
-              <label style={{ display: 'block', background: '#1a1d27', border: '1px dashed #3b5bdb', borderRadius: '0.5rem', padding: '0.625rem', textAlign: 'center', cursor: 'pointer', color: '#93c5fd', fontSize: '0.8rem' }}>
-                {convirtiendo ? '⏳ Convirtiendo...' : '📂 Seleccionar archivo .xls de Sucati'}
-                <input type="file" accept=".xls" style={{ display: 'none' }} onChange={e => { if(e.target.files[0]) convertirXLS(e.target.files[0]) }} />
-              </label>
-              {xlsxUrl && (
-                <a href={xlsxUrl} download={xlsxNombre} style={{ display: 'block', marginTop: '0.5rem', background: '#052e16', border: '1px solid #15803d', borderRadius: '0.5rem', padding: '0.5rem', textAlign: 'center', color: '#4ade80', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'none' }}>
-                  ⬇️ Descargar {xlsxNombre}
-                </a>
-              )}
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Buscador */}
