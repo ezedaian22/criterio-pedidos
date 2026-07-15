@@ -556,7 +556,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             var nombre = String(primerVal).trim()
             if (/^\d+$/.test(nombre)) continue
             var ignorar = ['modulo','cantidad','curva','entrega','observ','total','revisar','horario','facturar','proveedor','tel','condic','mail']
-            if (ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
+            if (!nombre || ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
 
             var cantVar = 0
             for (var j = 1; j < row.length; j++) {
@@ -589,7 +589,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               if (articulos[sName]) { hojaArt[sName] = sName; return }
               Object.keys(articulos).forEach(function(cod) {
                 if (hojaArt[sName]) return
-                var desc = articulos[cod].descripcion_cliente.toLowerCase()
+                var desc = (articulos[cod].descripcion_cliente || '').toLowerCase()
                 var palabras = desc.split(' ').filter(function(w) { return w.length > 3 })
                 if (sName.toLowerCase().includes(cod.toLowerCase()) ||
                     palabras.some(function(w) { return sName.toLowerCase().includes(w) })) {
@@ -621,7 +621,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               // Match por palabras clave de la descripción
               Object.keys(articulos).forEach(function(cod) {
                 if (hojasCodigo[sName]) return
-                var palabras = articulos[cod].descripcion_cliente.toLowerCase().split(/\s+/).filter(function(w){ return w.length > 3 })
+                var palabras = (articulos[cod].descripcion_cliente || '').toLowerCase().split(/\s+/).filter(function(w){ return w.length > 3 })
                 if (palabras.some(function(w){ return sLow.includes(w) })) {
                   hojasCodigo[sName] = cod
                 }
