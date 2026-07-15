@@ -448,19 +448,31 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
 
       </div>
 
-      {/* Sucursales */}
-      <div className="space-y-2">
-        <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Sucursales</h2>
-        {sucsNormales.filter(s => s.cantidad > 0).map(suc => (
-          <FilaSucursal key={suc.id} suc={suc} onAvanzar={() => avanzarEstado(suc)} onGuardarCajas={n => guardarCajas(suc, n)} onEditarCantidad={n => editarCantidad(suc, n)} cargando={guardando === suc.id} />
-        ))}
+      {/* Sucursales — grilla compacta */}
+      <div>
+        <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Sucursales</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(4.5rem, 1fr))', gap: '0.375rem' }}>
+          {sucsNormales.filter(s => s.cantidad > 0).map(suc => (
+            <TarjetaSucursal key={suc.id} suc={suc}
+              onAvanzar={() => avanzarEstado(suc)}
+              onGuardarCajas={n => guardarCajas(suc, n)}
+              onEditarCantidad={n => editarCantidad(suc, n)}
+              cargando={guardando === suc.id} />
+          ))}
+        </div>
       </div>
 
       {suc0 && (
-        <div className="space-y-2">
-          <h2 style={{ fontSize: '0.75rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Sucursal 0 — Entrega final</h2>
-          <FilaSucursal suc={suc0} especial bloqueada={!todasNormalesOk} onAvanzar={() => avanzarEstado(suc0)} onGuardarCajas={n => finalizarSuc0(n)} onEditarCantidad={n => editarCantidad(suc0, n)} cargando={guardando === suc0.id} />
-          {!todasNormalesOk && <p style={{ fontSize: '0.75rem', color: '#c084fc' }}>Se habilita cuando todas las sucursales estén listas.</p>}
+        <div>
+          <h2 style={{ fontSize: '0.75rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Suc. 0 — Entrega final</h2>
+          {!todasNormalesOk && <p style={{ fontSize: '0.7rem', color: '#c084fc', marginBottom: '0.375rem' }}>Se habilita cuando todas las sucursales estén listas.</p>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(4.5rem, 1fr))', gap: '0.375rem' }}>
+            <TarjetaSucursal suc={suc0} especial bloqueada={!todasNormalesOk}
+              onAvanzar={() => avanzarEstado(suc0)}
+              onGuardarCajas={n => finalizarSuc0(n)}
+              onEditarCantidad={n => editarCantidad(suc0, n)}
+              cargando={guardando === suc0.id} />
+          </div>
         </div>
       )}
 
@@ -488,6 +500,128 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
       }}>
         {exportandoArt ? '⏳ Subiendo a Sheets...' : '📊 Exportar distribución → Sheets'}
       </button>
+    </div>
+  )
+}
+
+function TarjetaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargando, especial, bloqueada }) {
+  const [expandida, setExpandida] = useState(false)
+  const [cajasInput, setCajasInput] = useState(suc.nro_cajas ? String(suc.nro_cajas) : '')
+  const [editandoCantidad, setEditandoCantidad] = useState(false)
+  const [cantidadInput, setCantidadInput] = useState(String(suc.cantidad))
+
+  const colores = {
+    pendiente:  { bg: '#1a1d27', borde: '#2a2d3e', texto: '#6b7280', dot: '#4b5563' },
+    separado:   { bg: '#1e2547', borde: '#3b5bdb', texto: '#93c5fd', dot: '#3b5bdb' },
+    guardado:   { bg: '#2a1f00', borde: '#b45309', texto: '#fcd34d', dot: '#f59e0b' },
+    finalizado: { bg: '#052e16', borde: '#15803d', texto: '#4ade80', dot: '#22c55e' },
+  }
+  const c = colores[suc.estado] || colores.pendiente
+  const borde = especial ? '#7e22ce' : c.borde
+
+  function confirmarCantidad() {
+    const nueva = parseInt(cantidadInput)
+    if (!nueva || nueva < 0) return
+    onEditarCantidad(nueva)
+    setEditandoCantidad(false)
+  }
+
+  return (
+    <div style={{ opacity: bloqueada ? 0.4 : 1, pointerEvents: bloqueada ? 'none' : 'auto' }}>
+      {/* Tarjeta compacta */}
+      <div
+        onClick={() => setExpandida(v => !v)}
+        style={{
+          background: c.bg, border: '1px solid ' + borde, borderRadius: '0.5rem',
+          padding: '0.375rem 0.25rem', textAlign: 'center', cursor: 'pointer',
+          position: 'relative'
+        }}
+      >
+        {/* Dot de estado */}
+        <div style={{ position: 'absolute', top: '0.25rem', right: '0.25rem', width: '0.45rem', height: '0.45rem', borderRadius: '50%', background: c.dot }} />
+        {/* Número sucursal */}
+        <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1rem', color: especial ? '#c084fc' : 'white' }}>
+          {suc.nro_sucursal}
+        </div>
+        {/* Cantidad */}
+        <div style={{ fontSize: '0.7rem', color: c.texto, fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>
+          {suc.cantidad}u
+        </div>
+        {/* Cajas si finalizado */}
+        {suc.estado === 'finalizado' && suc.nro_cajas && (
+          <div style={{ fontSize: '0.6rem', color: '#6b7280' }}>{suc.nro_cajas}cj</div>
+        )}
+      </div>
+
+      {/* Panel expandido */}
+      {expandida && (
+        <div style={{ background: '#1a1d27', border: '1px solid ' + borde, borderRadius: '0.5rem', padding: '0.625rem', marginTop: '0.25rem' }}>
+          {/* Talles */}
+          {suc.talles && Object.keys(suc.talles).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginBottom: '0.375rem' }}>
+              {Object.entries(suc.talles).map(([t, c]) => (
+                <span key={t} style={{ fontSize: '0.65rem', color: '#93c5fd' }}>
+                  T{t}:<span style={{ color: 'white', fontFamily: "'Archivo Black', sans-serif" }}>{c}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Editar cantidad */}
+          {suc.estado !== 'finalizado' && (
+            editandoCantidad ? (
+              <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.375rem' }}>
+                <input type="number" min="0" value={cantidadInput}
+                  onChange={e => setCantidadInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmarCantidad(); if (e.key === 'Escape') setEditandoCantidad(false) }}
+                  autoFocus
+                  style={{ width: '3.5rem', background: '#0f1117', border: '1px solid #3b5bdb', borderRadius: '0.25rem', padding: '0.125rem 0.25rem', color: 'white', fontSize: '0.8rem', textAlign: 'center' }}
+                />
+                <button onClick={confirmarCantidad} style={{ background: '#3b5bdb', color: 'white', border: 'none', borderRadius: '0.25rem', padding: '0.125rem 0.375rem', cursor: 'pointer', fontSize: '0.7rem' }}>✓</button>
+                <button onClick={() => setEditandoCantidad(false)} style={{ background: 'none', color: '#6b7280', border: 'none', cursor: 'pointer', fontSize: '0.7rem' }}>✕</button>
+              </div>
+            ) : (
+              <button onClick={() => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(true) }}
+                style={{ fontSize: '0.65rem', color: '#6b7280', background: 'none', border: '1px solid #2a2d3e', borderRadius: '0.25rem', padding: '0.1rem 0.375rem', cursor: 'pointer', marginBottom: '0.375rem', width: '100%' }}>
+                ✎ {suc.cantidad}u
+              </button>
+            )
+          )}
+
+          {/* Input cajas */}
+          {suc.estado === 'guardado' && (
+            <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.375rem' }}>
+              <input type="number" min="1" placeholder="Cajas"
+                style={{ flex: 1, background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.25rem', padding: '0.25rem', color: 'white', fontSize: '0.75rem', textAlign: 'center' }}
+                value={cajasInput} onChange={e => setCajasInput(e.target.value)} />
+              <button onClick={() => onGuardarCajas(cajasInput)} disabled={!cajasInput || cargando}
+                style={{ background: '#3b5bdb', color: 'white', border: 'none', borderRadius: '0.25rem', padding: '0.25rem 0.5rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
+                {cargando ? '...' : '✓'}
+              </button>
+            </div>
+          )}
+
+          {/* Fecha finalizado */}
+          {suc.estado === 'finalizado' && suc.fecha_finalizacion && (
+            <p style={{ fontSize: '0.65rem', color: '#6b7280', marginBottom: '0.375rem' }}>{formatFecha(suc.fecha_finalizacion)}</p>
+          )}
+
+          {/* Botones de avance */}
+          {suc.estado === 'pendiente' && (
+            <button onClick={onAvanzar} disabled={cargando}
+              style={{ width: '100%', background: '#1e3a5f', color: '#93c5fd', border: 'none', borderRadius: '0.375rem', padding: '0.375rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+              {cargando ? '...' : 'Separado ✓'}
+            </button>
+          )}
+          {suc.estado === 'separado' && (
+            <button onClick={onAvanzar} disabled={cargando}
+              style={{ width: '100%', background: '#451a03', color: '#fcd34d', border: 'none', borderRadius: '0.375rem', padding: '0.375rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+              {cargando ? '...' : 'Guardado ✓'}
+            </button>
+          )}
+          {suc.estado === 'finalizado' && <div style={{ textAlign: 'center', color: '#4ade80', fontSize: '1rem' }}>✓</div>}
+        </div>
+      )}
     </div>
   )
 }
