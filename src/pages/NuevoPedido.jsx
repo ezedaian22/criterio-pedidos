@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase, supabaseCostos } from '../lib/supabase'
 import { parsearArchivoPedido } from '../lib/parsearPedido'
 
-export default function NuevoPedido({ session, onVolver, onGuardado }) {
+export default function NuevoPedido({ session, onVolver, onGuardado, archivoInicial }) {
   const [paso, setPaso] = useState('archivo')
   const [clientes, setClientes] = useState([])
   const [archivos, setArchivos] = useState([])
@@ -16,6 +16,14 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
   useEffect(() => {
     supabase.from('clientes').select('*').then(({ data }) => setClientes(data || []))
   }, [])
+
+  // Si viene un archivo pre-convertido del Dashboard, parsearlo automáticamente
+  useEffect(() => {
+    if (archivoInicial && clientes.length > 0) {
+      setArchivos([archivoInicial])
+      setTimeout(() => handleParsearConArchivos([archivoInicial]), 100)
+    }
+  }, [archivoInicial, clientes])
 
   function detectarCliente(nombreArchivo, textoIA) {
     var texto = (nombreArchivo + ' ' + (textoIA || '')).toLowerCase()
@@ -39,16 +47,20 @@ export default function NuevoPedido({ session, onVolver, onGuardado }) {
   }
 
   async function handleParsear() {
-    if (archivos.length === 0) return
+    await handleParsearConArchivos(archivos)
+  }
+
+  async function handleParsearConArchivos(lista) {
+    if (!lista || lista.length === 0) return
     setError('')
     setCargando(true)
     setParseados([])
 
     var resultados = []
 
-    for (var i = 0; i < archivos.length; i++) {
-      var archivo = archivos[i]
-      setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + archivos.length + ': ' + archivo.name + '...')
+    for (var i = 0; i < lista.length; i++) {
+      var archivo = lista[i]
+      setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + lista.length + ': ' + archivo.name + '...')
 
       try {
         // Si es .xls, convertir a .xlsx en memoria antes de parsear
