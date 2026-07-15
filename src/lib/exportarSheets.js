@@ -192,8 +192,12 @@ export async function exportarArticuloSheets(articulo, pedido) {
   const preparadores = (articulo.preparadores || []).join(', ') || 'Sin asignar'
   const descuento = pedido.descuento ? pedido.descuento + '%' : ''
   const razonSocial = pedido.razon_social || ''
+  const fechaEntregaLabel = pedido.fecha_entrega
+    ? new Date(pedido.fecha_entrega).toLocaleDateString('es-AR')
+    : ''
   rows.push(['Cliente', cliente, '', 'Pedido N°', nroPedido])
   if (razonSocial) rows.push(['FACTURAR A', razonSocial])
+  if (fechaEntregaLabel) rows.push(['Fecha entrega', fechaEntregaLabel])
   rows.push(['Artículo', codigo, '', 'Descripción', descripcion])
   rows.push(['Precio unit.', precio, '', 'Total unid.', articulo.total_unidades || ''])
   if (descuento) rows.push(['Descuento', descuento])
@@ -239,7 +243,10 @@ export async function exportarArticuloSheets(articulo, pedido) {
   rows.push(['TOTAL', totalCantidad, ...totalPorTalle, '', '', ''])
 
   // Crear spreadsheet
-  const titulo = 'Art_' + codigo + '_' + cliente + (nroPedido ? '_P' + nroPedido : '')
+  const fechaEntregaStr = pedido.fecha_entrega
+    ? new Date(pedido.fecha_entrega).toLocaleDateString('es-AR').replace(/\//g, '-')
+    : ''
+  const titulo = 'Art_' + codigo + '_' + cliente + (nroPedido ? '_P' + nroPedido : '') + (fechaEntregaStr ? '_' + fechaEntregaStr : '')
   const sheet = await crearSpreadsheet(token, titulo)
   const spreadsheetId = sheet.spreadsheetId
   const sheetId = sheet.sheets[0].properties.sheetId
