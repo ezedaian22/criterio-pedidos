@@ -487,7 +487,9 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           var sucursalesArt = {}
           Object.keys(colSucs).forEach(function(nroSuc) {
             var colIdx = colSucs[nroSuc]
-            var cant = parseInt(row[colIdx])
+            var rawVal = row[colIdx]
+            var cant = parseInt(rawVal)
+            if (nroSuc === '0') console.log('SUC0 check: colIdx='+colIdx+' rawVal='+JSON.stringify(rawVal)+' cant='+cant+' codigo='+codigo)
             if (!isNaN(cant) && cant > 0) {
               sucursalesArt[nroSuc] = {
                 nro_sucursal: nroSuc,
