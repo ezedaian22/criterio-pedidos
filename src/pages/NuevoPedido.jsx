@@ -12,43 +12,39 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
   const [cargando, setCargando] = useState(false)
   const [progresoParseo, setProgresoParseo] = useState('')
   const inputRef = useRef()
-  const archivoInicialRef = useRef(archivoInicial)
+  const yaParseadoRef = useRef(false)
 
   useEffect(() => {
     supabase.from('clientes').select('*').then(({ data }) => setClientes(data || []))
   }, [])
 
-  // Si viene un archivo pre-convertido del Dashboard, parsearlo cuando los clientes carguen
+  // Parsear archivo pre-convertido cuando llega del Dashboard
   useEffect(() => {
-    if (archivoInicialRef.current && clientes.length > 0) {
-      var f = archivoInicialRef.current
-      archivoInicialRef.current = null
-      setArchivos([f])
-      setPaso('archivo')
-      // Parsear directamente
-      setError('')
-      setCargando(true)
-      setParseados([])
-      setProgresoParseo('Interpretando ' + f.name + '...')
-      parsearArchivoPedido(f, '', supabase)
-        .then(function(resultado) { return enriquecerConCostos(resultado) })
-        .then(function(enriquecido) {
-          var det = ((enriquecido.cliente_detectado || '')).toLowerCase()
-            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-          var clienteDetectado = null
-          if (det.includes('garcia') || det.includes('reguera')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'García Reguera' })
-          else if (det.includes('balbi')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Balbi' })
-          else if (det.includes('sucati') || det.includes('chandal')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Sucati' })
-          setParseados([{ archivo: f.name, cliente: clienteDetectado, clienteId: clienteDetectado ? clienteDetectado.id : null, data: enriquecido, error: null }])
-          setPaso('revisar')
-        })
-        .catch(function(err) {
-          setParseados([{ archivo: f.name, cliente: null, clienteId: null, data: null, error: err.message }])
-          setPaso('revisar')
-        })
-        .finally(function() { setCargando(false); setProgresoParseo('') })
-    }
-  }, [clientes])
+    if (!archivoInicial || clientes.length === 0 || yaParseadoRef.current) return
+    yaParseadoRef.current = true
+    setArchivos([archivoInicial])
+    setError('')
+    setCargando(true)
+    setParseados([])
+    setProgresoParseo('Interpretando ' + archivoInicial.name + '...')
+    parsearArchivoPedido(archivoInicial, '', supabase)
+      .then(function(resultado) { return enriquecerConCostos(resultado) })
+      .then(function(enriquecido) {
+        var det = (enriquecido.cliente_detectado || '').toLowerCase()
+          .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+        var clienteDetectado = null
+        if (det.includes('garcia') || det.includes('reguera')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'García Reguera' })
+        else if (det.includes('balbi')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Balbi' })
+        else if (det.includes('sucati') || det.includes('chandal')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Sucati' })
+        setParseados([{ archivo: archivoInicial.name, cliente: clienteDetectado, clienteId: clienteDetectado ? clienteDetectado.id : null, data: enriquecido, error: null }])
+        setPaso('revisar')
+      })
+      .catch(function(err) {
+        setParseados([{ archivo: archivoInicial.name, cliente: null, clienteId: null, data: null, error: err.message }])
+        setPaso('revisar')
+      })
+      .finally(function() { setCargando(false); setProgresoParseo('') })
+  }, [archivoInicial, clientes])
 
   function detectarCliente(nombreArchivo, textoIA) {
     var texto = (nombreArchivo + ' ' + (textoIA || '')).toLowerCase()
@@ -72,42 +68,18 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
   }
 
   async function handleParsear() {
-    await handleParsearConArchivos(archivos)
-  }
-
-  async function handleParsearConArchivos(lista) {
-    if (!lista || lista.length === 0) return
+    if (archivos.length === 0) return
     setError('')
     setCargando(true)
     setParseados([])
 
     var resultados = []
 
-    for (var i = 0; i < lista.length; i++) {
-      var archivo = lista[i]
-      setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + lista.length + ': ' + archivo.name + '...')
+    for (var i = 0; i < archivos.length; i++) {
+      var archivo = archivos[i]
+      setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + archivos.length + ': ' + archivo.name + '...')
 
       try {
-        // Si es .xls, convertir a .xlsx en memoria antes de parsear
-        if (archivo.name.toLowerCase().endsWith('.xls') && !archivo.name.toLowerCase().endsWith('.xlsx')) {
-          setProgresoParseo('Convirtiendo ' + archivo.name + ' a .xlsx...')
-          if (!window.XLSX) {
-            await new Promise(function(resolve, reject) {
-              var s = document.createElement('script')
-              s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
-              s.onload = resolve; s.onerror = reject
-              document.head.appendChild(s)
-            })
-          }
-          var xlsBuf = await archivo.arrayBuffer()
-          var wb = window.XLSX.read(new Uint8Array(xlsBuf), { type: 'array', cellStyles: true, cellDates: true })
-          var xlsxArr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-          var xlsxBlob = new Blob([xlsxArr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-          var nuevoNombre = archivo.name.slice(0, -4) + '.xlsx'
-          archivo = new File([xlsxBlob], nuevoNombre, { type: xlsxBlob.type })
-          setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + archivos.length + ': ' + nuevoNombre + '...')
-        }
-
         var resultado = await parsearArchivoPedido(archivo, '', supabase)
         var enriquecido = await enriquecerConCostos(resultado)
 
