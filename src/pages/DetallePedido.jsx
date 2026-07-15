@@ -426,13 +426,16 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
             <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Colores / Variantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               {variantes.map(v => {
-                const color = colorDeNombre(v.nombre)
-                const textoOscuro = esColorClaro(color)
+                const esEstampa = v.es_estampa || /dns|vte|estampa/i.test(v.nombre || '')
+                const color = esEstampa ? null : colorDeNombre(v.nombre)
                 return (
                   <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', minWidth: '5rem' }}>
-                    {/* Círculo de color */}
-                    <div style={{ background: color, height: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <div style={{ width: '2rem', height: '2rem', borderRadius: '50%', background: color, border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 0 0 1px rgba(0,0,0,0.3)' }} />
+                    {/* Círculo de color o ícono de estampa */}
+                    <div style={{ background: esEstampa ? '#1e2547' : color, height: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {esEstampa
+                        ? <span style={{ fontSize: '1.5rem' }}>🎨</span>
+                        : <div style={{ width: '2rem', height: '2rem', borderRadius: '50%', background: color, border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 0 0 1px rgba(0,0,0,0.3)' }} />
+                      }
                     </div>
                     {/* Nombre y cantidad */}
                     <div style={{ background: '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
