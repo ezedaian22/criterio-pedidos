@@ -12,13 +12,13 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
   const [cargando, setCargando] = useState(false)
   const [progresoParseo, setProgresoParseo] = useState('')
   const inputRef = useRef()
+  const archivoInicialRef = useRef(archivoInicial)
 
   useEffect(() => {
     supabase.from('clientes').select('*').then(({ data }) => setClientes(data || []))
   }, [])
 
   // Si viene un archivo pre-convertido del Dashboard, parsearlo cuando los clientes carguen
-  const archivoInicialRef = React.useRef(archivoInicial)
   useEffect(() => {
     if (archivoInicialRef.current && clientes.length > 0) {
       var f = archivoInicialRef.current
