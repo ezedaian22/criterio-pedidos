@@ -615,7 +615,15 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               return hojasCodigo[s] && !s.toLowerCase().includes('nota de pedido')
             })
 
-            var imgGrandes = mediaIdxs.filter(function(idx) {
+            // Imágenes de tamaño medio = muestrarios de colores (50KB-400KB)
+            // Imágenes muy grandes (>400KB) = fotos del artículo terminado — no las queremos
+            var imgsMuestrario = mediaIdxs.filter(function(idx) {
+              var sz = mediaFromZip[idx] ? mediaFromZip[idx].buffer.byteLength : 0
+              return sz >= 50000 && sz <= 400000
+            })
+
+            // Si no hay muestrarios, usar cualquier imagen grande
+            var imgsAUsar = imgsMuestrario.length > 0 ? imgsMuestrario : mediaIdxs.filter(function(idx) {
               return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength >= 50000
             })
 
@@ -623,8 +631,9 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               var hoja = hojasConImg[hi]
               var cod = hojasCodigo[hoja]
               if (!cod || subidas[cod]) continue
-              // Tomar la imagen grande que corresponde a esta hoja
-              var mf = mediaFromZip[imgGrandes[hi]]
+              // Tomar la imagen que corresponde a esta hoja según el índice
+              var mf = mediaFromZip[imgsAUsar[hi]]
+              if (!mf) mf = mediaFromZip[imgsAUsar[0]] // fallback a la primera disponible
               if (!mf) continue
               try {
                 var fileName = 'sucati/' + cod + '_' + Date.now() + '.' + mf.ext
