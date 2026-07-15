@@ -414,6 +414,8 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           break
         }
 
+        console.log('SUCATI colSucs:', JSON.stringify(colSucs))
+        console.log('SUCATI colCodProv:', colCodProv, 'colPrecio:', colPrecio)
         if (headerRowIdx === -1 || colCodProv === -1) {
           reject(new Error('No se encontró encabezado en el XLS')); return
         }
@@ -610,6 +612,10 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           }
         }
 
+        console.log('SUCATI articulos keys:', articulosOrden)
+        articulosOrden.forEach(function(cod) {
+          console.log('ART', cod, 'sucursales:', Object.keys(articulos[cod].sucursales))
+        })
         // Detectar razón social
         var resultado = articulosOrden.map(function(cod) {
           var art = articulos[cod]
