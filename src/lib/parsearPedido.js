@@ -360,6 +360,16 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         // Pre-cargar imágenes del ZIP interno (XLSX = ZIP con xl/media/)
         var mediaFromZip = {}
         try {
+          // Cargar JSZip dinámicamente si no está en window
+          if (!window.JSZip) {
+            await new Promise(function(resolve, reject) {
+              var s = document.createElement('script')
+              s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+              s.onload = resolve
+              s.onerror = reject
+              document.head.appendChild(s)
+            })
+          }
           if (window.JSZip) {
             var zip = await window.JSZip.loadAsync(rawBuffer)
             var mediaKeys = Object.keys(zip.files).filter(function(k) {
