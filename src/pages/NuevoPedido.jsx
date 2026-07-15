@@ -40,11 +40,11 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
           else if (det.includes('balbi')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Balbi' })
           else if (det.includes('sucati') || det.includes('chandal')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Sucati' })
           setParseados([{ archivo: f.name, cliente: clienteDetectado, clienteId: clienteDetectado ? clienteDetectado.id : null, data: enriquecido, error: null }])
-          setPaso('revision')
+          setPaso('revisar')
         })
         .catch(function(err) {
           setParseados([{ archivo: f.name, cliente: null, clienteId: null, data: null, error: err.message }])
-          setPaso('revision')
+          setPaso('revisar')
         })
         .finally(function() { setCargando(false); setProgresoParseo('') })
     }
