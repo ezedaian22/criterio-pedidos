@@ -11,6 +11,7 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [pagina, setPagina] = useState('dashboard')
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null)
+  const [archivoParaNuevo, setArchivoParaNuevo] = useState(null)
 
   useEffect(() => {
     setSession(getSession())
@@ -105,8 +106,8 @@ export default function App() {
           <Dashboard
             session={session}
             onNuevoPedido={(archivoPreconvertido) => {
-              setPedidoSeleccionado(archivoPreconvertido || null)
-              irA('nuevo')
+              setArchivoParaNuevo(archivoPreconvertido || null)
+              setPagina('nuevo')
             }}
             onVerPedido={(p) => irA('detalle', p)}
           />
@@ -114,9 +115,9 @@ export default function App() {
         {pagina === 'nuevo' && (
           <NuevoPedido
             session={session}
-            archivoInicial={pedidoSeleccionado instanceof File ? pedidoSeleccionado : null}
-            onVolver={() => { setPedidoSeleccionado(null); irA('dashboard') }}
-            onGuardado={() => { setPedidoSeleccionado(null); irA('dashboard') }}
+            archivoInicial={archivoParaNuevo}
+            onVolver={() => { setArchivoParaNuevo(null); irA('dashboard') }}
+            onGuardado={() => { setArchivoParaNuevo(null); irA('dashboard') }}
           />
         )}
         {pagina === 'detalle' && (
