@@ -398,7 +398,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           if (!row.some(function(v) { return v && String(v).toLowerCase().includes('cod prov') })) continue
           headerRowIdx = i
           row.forEach(function(v, j) {
-            if (!v) return
+            if (v === null || v === undefined || v === '') return
             var vs = String(v).trim()
             if (vs.toLowerCase().includes('cod prov')) colCodProv = j
             if (vs.toLowerCase() === 'descripcion') colDesc = j
