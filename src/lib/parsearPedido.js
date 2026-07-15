@@ -565,7 +565,9 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               if (numStr && parseInt(numStr) > 0) { cantVar = parseInt(numStr); break }
             }
             if (nombre && cantVar > 0) {
-              articulos[artActual].variantes.push({ nombre: nombre, cantidad: cantVar, imagen_url: null })
+              // Detectar si es estampa (DNS, VTE, estampa, etc.)
+              var esEstampa = /dns|vte|estampa|diseño|print/i.test(nombre)
+              articulos[artActual].variantes.push({ nombre: nombre, cantidad: cantVar, imagen_url: null, es_estampa: esEstampa })
             }
           }
         }
@@ -607,6 +609,15 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               // Match directo por código
               if (articulos[sName]) { hojasCodigo[sName] = sName; return }
               if (articulos[sName.trim()]) { hojasCodigo[sName] = sName.trim(); return }
+              // Hoja de estampas/modal → asignar a TODOS los artículos
+              if (sLow.includes('modal est') || sLow.includes('estampa') || sLow.includes('estampas')) {
+                Object.keys(articulos).forEach(function(cod) {
+                  if (!hojasCodigo[sName]) hojasCodigo[sName] = cod // primer artículo
+                  // Marcar todos los artículos para recibir esta imagen
+                  articulos[cod]._hojaEstampa = sName
+                })
+                return
+              }
               // Match por palabras clave de la descripción
               Object.keys(articulos).forEach(function(cod) {
                 if (hojasCodigo[sName]) return
@@ -625,45 +636,110 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               return hojasCodigo[s] && !s.toLowerCase().includes('nota de pedido')
             })
 
-            // Imágenes de tamaño medio = muestrarios de colores (50KB-400KB)
-            // Imágenes muy grandes (>400KB) = fotos del artículo terminado — no las queremos
-            var imgsMuestrario = mediaIdxs.filter(function(idx) {
-              var sz = mediaFromZip[idx] ? mediaFromZip[idx].buffer.byteLength : 0
-              return sz >= 50000 && sz <= 400000
+            // Estrategia de imágenes:
+            // 1. Si hay hoja de estampas (Modal Est): subir UNA imagen por variante en orden
+            // 2. Si no: subir la imagen más representativa por artículo (muestrario de colores)
+
+            // Detectar si hay hoja de estampas
+            var hojaEstampas = wb.SheetNames.find(function(s) {
+              return s.toLowerCase().includes('modal est') || s.toLowerCase().includes('estampa')
             })
 
-            // Si no hay muestrarios, usar cualquier imagen grande
-            var imgsAUsar = imgsMuestrario.length > 0 ? imgsMuestrario : mediaIdxs.filter(function(idx) {
+            // Imágenes grandes (descartar íconos <10KB)
+            var imgsGrandes = mediaIdxs.filter(function(idx) {
               return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength >= 50000
             })
 
-            for (var hi = 0; hi < hojasConImg.length; hi++) {
-              var hoja = hojasConImg[hi]
-              var cod = hojasCodigo[hoja]
-              if (!cod || subidas[cod]) continue
-              // Tomar la imagen que corresponde a esta hoja según el índice
-              var mf = mediaFromZip[imgsAUsar[hi]]
-              if (!mf) mf = mediaFromZip[imgsAUsar[0]] // fallback a la primera disponible
-              if (!mf) continue
-              try {
-                var fileName = 'sucati/' + cod + '_' + Date.now() + '.' + mf.ext
-                var blob = new Blob([mf.buffer], { type: 'image/' + mf.ext })
-                var uploadRes = await supabaseClient.storage
-                  .from('pedidos-variantes')
-                  .upload(fileName, blob, { contentType: 'image/' + mf.ext, upsert: true })
-                if (!uploadRes.error) {
-                  var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
-                  if (urlRes.data) {
-                    var imgUrl = urlRes.data.publicUrl
-                    articulos[cod].imagen_url = imgUrl
-                    articulos[cod].variantes.forEach(function(vr) {
-                      if (!vr.imagen_url) vr.imagen_url = imgUrl
-                    })
-                    subidas[cod] = true
+            if (hojaEstampas && Object.keys(articulos).some(function(c) { return articulos[c].variantes.some(function(v){ return v.es_estampa }) })) {
+              // Modo estampas: asignar imágenes en orden a cada variante de cada artículo
+              // Las imágenes están ordenadas por posición en el ZIP igual al orden de la hoja
+              // Cada variante recibe su propia imagen
+              var imgIdx = 0
+              articulosOrden.forEach(function(cod) {
+                var art = articulos[cod]
+                var variantesEstampa = art.variantes.filter(function(v) { return v.es_estampa })
+                if (variantesEstampa.length === 0) return
+
+                // Subir imagen por variante de forma síncrona (async en forEach no funciona bien)
+                // Lo marcamos para procesar después
+                art._variantesParaImg = variantesEstampa
+                art._imgIdxStart = imgIdx
+                imgIdx += variantesEstampa.length
+              })
+
+              // Procesar uploads de estampas
+              for (var ai = 0; ai < articulosOrden.length; ai++) {
+                var cod = articulosOrden[ai]
+                var art = articulos[cod]
+                if (!art._variantesParaImg) continue
+
+                for (var vi = 0; vi < art._variantesParaImg.length; vi++) {
+                  var variante = art._variantesParaImg[vi]
+                  var imgIdxAbs = art._imgIdxStart + vi
+                  var mf = mediaFromZip[imgsGrandes[imgIdxAbs]]
+                  if (!mf) continue
+                  try {
+                    var fileName = 'sucati/estampa_' + cod + '_v' + vi + '_' + Date.now() + '.' + mf.ext
+                    var blob = new Blob([mf.buffer], { type: 'image/' + mf.ext })
+                    var uploadRes = await supabaseClient.storage
+                      .from('pedidos-variantes')
+                      .upload(fileName, blob, { contentType: 'image/' + mf.ext, upsert: true })
+                    if (!uploadRes.error) {
+                      var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
+                      if (urlRes.data) {
+                        // Asignar esta imagen a la variante específica
+                        variante.imagen_url = urlRes.data.publicUrl
+                        // Primera variante también va como imagen del artículo
+                        if (vi === 0) {
+                          art.imagen_url = urlRes.data.publicUrl
+                          // Propagar a todos los artículos del mismo pedido (misma hoja de estampas)
+                          articulosOrden.forEach(function(otroCod) {
+                            if (otroCod !== cod && !articulos[otroCod].imagen_url) {
+                              // Los demás artículos con estampas comparten el mismo orden de imágenes
+                              // sus variantes se procesarán en su propio loop
+                            }
+                          })
+                        }
+                      }
+                    }
+                  } catch(imgErr) {
+                    console.error('Error subiendo estampa:', imgErr)
                   }
                 }
-              } catch(imgErr) {
-                console.error('Error subiendo img art', cod, ':', imgErr)
+              }
+            } else {
+              // Modo colores: una imagen por artículo (muestrario)
+              var imgsMuestrario = imgsGrandes.filter(function(idx) {
+                return mediaFromZip[idx].buffer.byteLength <= 400000
+              })
+              var imgsAUsar = imgsMuestrario.length > 0 ? imgsMuestrario : imgsGrandes
+
+              for (var hi = 0; hi < hojasConImg.length; hi++) {
+                var hoja = hojasConImg[hi]
+                var cod = hojasCodigo[hoja]
+                if (!cod || subidas[cod]) continue
+                var mf = mediaFromZip[imgsAUsar[hi]] || mediaFromZip[imgsAUsar[0]]
+                if (!mf) continue
+                try {
+                  var fileName = 'sucati/' + cod + '_' + Date.now() + '.' + mf.ext
+                  var blob = new Blob([mf.buffer], { type: 'image/' + mf.ext })
+                  var uploadRes = await supabaseClient.storage
+                    .from('pedidos-variantes')
+                    .upload(fileName, blob, { contentType: 'image/' + mf.ext, upsert: true })
+                  if (!uploadRes.error) {
+                    var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
+                    if (urlRes.data) {
+                      var imgUrl = urlRes.data.publicUrl
+                      articulos[cod].imagen_url = imgUrl
+                      articulos[cod].variantes.forEach(function(vr) {
+                        if (!vr.imagen_url) vr.imagen_url = imgUrl
+                      })
+                      subidas[cod] = true
+                    }
+                  }
+                } catch(imgErr) {
+                  console.error('Error subiendo img art', cod, ':', imgErr)
+                }
               }
             }
           } catch(e) {
