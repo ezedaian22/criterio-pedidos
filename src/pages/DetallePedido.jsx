@@ -451,28 +451,18 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
       {/* Sucursales — grilla compacta */}
       <div>
         <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Sucursales</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(4.5rem, 1fr))', gap: '0.375rem' }}>
-          {sucsNormales.filter(s => s.cantidad > 0).map(suc => (
-            <TarjetaSucursal key={suc.id} suc={suc}
-              onAvanzar={() => avanzarEstado(suc)}
-              onGuardarCajas={n => guardarCajas(suc, n)}
-              onEditarCantidad={n => editarCantidad(suc, n)}
-              cargando={guardando === suc.id} />
-          ))}
-        </div>
+        <SucursalesGrid sucs={sucsNormales.filter(s => s.cantidad > 0)}
+          onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas}
+          onEditarCantidad={editarCantidad} guardando={guardando} />
       </div>
 
       {suc0 && (
         <div>
           <h2 style={{ fontSize: '0.75rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Suc. 0 — Entrega final</h2>
           {!todasNormalesOk && <p style={{ fontSize: '0.7rem', color: '#c084fc', marginBottom: '0.375rem' }}>Se habilita cuando todas las sucursales estén listas.</p>}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(4.5rem, 1fr))', gap: '0.375rem' }}>
-            <TarjetaSucursal suc={suc0} especial bloqueada={!todasNormalesOk}
-              onAvanzar={() => avanzarEstado(suc0)}
-              onGuardarCajas={n => finalizarSuc0(n)}
-              onEditarCantidad={n => editarCantidad(suc0, n)}
-              cargando={guardando === suc0.id} />
-          </div>
+          <SucursalesGrid sucs={[suc0]} especial bloqueada={!todasNormalesOk}
+            onAvanzar={avanzarEstado} onGuardarCajas={finalizarSuc0}
+            onEditarCantidad={editarCantidad} guardando={guardando} />
         </div>
       )}
 
@@ -500,6 +490,181 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
       }}>
         {exportandoArt ? '⏳ Subiendo a Sheets...' : '📊 Exportar distribución → Sheets'}
       </button>
+    </div>
+  )
+}
+
+// Leyenda de estados
+const ESTADOS_LEYENDA = [
+  { estado: 'pendiente',  color: '#4b5563', label: 'Pendiente'  },
+  { estado: 'separado',   color: '#3b5bdb', label: 'Separado'   },
+  { estado: 'guardado',   color: '#f59e0b', label: 'Guardado'   },
+  { estado: 'finalizado', color: '#22c55e', label: 'Finalizado' },
+]
+
+function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, guardando, especial, bloqueada }) {
+  const [seleccionada, setSeleccionada] = useState(null)
+  const sucPanel = seleccionada ? sucs.find(s => s.id === seleccionada) : null
+
+  // Click directo en tarjeta avanza el estado (pendiente→separado→guardado)
+  // Guardado necesita cajas → se abre el panel
+  function handleClickTarjeta(s) {
+    if (bloqueada) return
+    if (s.estado === 'pendiente') {
+      onAvanzar(s)
+    } else if (s.estado === 'separado') {
+      onAvanzar(s)
+      setSeleccionada(s.id) // abrir panel para ingresar cajas
+    } else {
+      // guardado o finalizado → abrir/cerrar panel
+      setSeleccionada(seleccionada === s.id ? null : s.id)
+    }
+  }
+
+  const dotColor = { pendiente: '#4b5563', separado: '#3b5bdb', guardado: '#f59e0b', finalizado: '#22c55e' }
+  const bgColor  = { pendiente: '#1a1d27', separado: '#1e2547', guardado: '#2a1f00', finalizado: '#052e16' }
+  const border   = { pendiente: '#2a2d3e', separado: '#3b5bdb', guardado: '#b45309', finalizado: '#15803d' }
+  const textColor = { pendiente: '#9ca3af', separado: '#93c5fd', guardado: '#fcd34d', finalizado: '#4ade80' }
+
+  return (
+    <div>
+      {/* Leyenda de colores */}
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+        {ESTADOS_LEYENDA.map(e => (
+          <div key={e.estado} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <div style={{ width: '0.6rem', height: '0.6rem', borderRadius: '50%', background: e.color, flexShrink: 0 }} />
+            <span style={{ fontSize: '0.65rem', color: '#6b7280' }}>{e.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Grilla */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(4.5rem, 1fr))', gap: '0.375rem', marginBottom: sucPanel ? '0.5rem' : 0 }}>
+        {sucs.map(s => {
+          const activa = seleccionada === s.id
+          const est = s.estado || 'pendiente'
+          return (
+            <div key={s.id}
+              onClick={() => handleClickTarjeta(s)}
+              style={{
+                background: activa ? (border[est] + '33') : bgColor[est],
+                border: '2px solid ' + (activa ? border[est] : (especial ? '#7e22ce' : border[est])),
+                borderRadius: '0.5rem', padding: '0.375rem 0.25rem',
+                textAlign: 'center', cursor: bloqueada ? 'not-allowed' : 'pointer',
+                opacity: bloqueada ? 0.4 : 1, position: 'relative',
+                transition: 'all 0.15s'
+              }}>
+              <div style={{ position: 'absolute', top: '0.25rem', right: '0.25rem', width: '0.45rem', height: '0.45rem', borderRadius: '50%', background: dotColor[est] }} />
+              <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1rem', color: especial ? '#c084fc' : 'white' }}>{s.nro_sucursal}</div>
+              <div style={{ fontSize: '0.7rem', color: textColor[est], fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{s.cantidad}u</div>
+              {s.estado === 'finalizado' && s.nro_cajas && <div style={{ fontSize: '0.6rem', color: '#6b7280' }}>{s.nro_cajas}cj</div>}
+              {guardando === s.id && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', borderRadius: '0.4rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'white' }}>...</div>}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Panel expandido — ancho completo, fuera de la grilla */}
+      {sucPanel && (
+        <PanelSucursal suc={sucPanel} especial={especial} bloqueada={bloqueada}
+          onAvanzar={() => onAvanzar(sucPanel)}
+          onGuardarCajas={n => { onGuardarCajas(sucPanel, n); setSeleccionada(null) }}
+          onEditarCantidad={n => onEditarCantidad(sucPanel, n)}
+          cargando={guardando === sucPanel.id}
+          onCerrar={() => setSeleccionada(null)} />
+      )}
+    </div>
+  )
+}
+
+function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargando, especial, bloqueada, onCerrar }) {
+  const [cajasInput, setCajasInput] = useState(suc.nro_cajas ? String(suc.nro_cajas) : '')
+  const [editandoCantidad, setEditandoCantidad] = useState(false)
+  const [cantidadInput, setCantidadInput] = useState(String(suc.cantidad))
+
+  const borderColor = { pendiente: '#2a2d3e', separado: '#3b5bdb', guardado: '#b45309', finalizado: '#15803d' }
+  const labelColor  = { pendiente: '#6b7280',  separado: '#93c5fd', guardado: '#fcd34d', finalizado: '#4ade80' }
+  const labels      = { pendiente: 'Pendiente', separado: 'Separado', guardado: 'Guardado', finalizado: 'Finalizado' }
+  const bc = especial ? '#7e22ce' : (borderColor[suc.estado] || '#2a2d3e')
+
+  function confirmarCantidad() {
+    const nueva = parseInt(cantidadInput)
+    if (!nueva || nueva < 0) return
+    onEditarCantidad(nueva)
+    setEditandoCantidad(false)
+  }
+
+  return (
+    <div style={{ background: '#1a1d27', border: '1px solid ' + bc, borderRadius: '0.75rem', padding: '0.75rem', marginTop: '0.375rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.1rem', color: especial ? '#c084fc' : '#6b8fff' }}>Suc. {suc.nro_sucursal}</span>
+          <span style={{ fontSize: '0.8rem', color: labelColor[suc.estado], fontWeight: 600 }}>{labels[suc.estado]}</span>
+          {/* Cantidad editable */}
+          {suc.estado !== 'finalizado' && editandoCantidad ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <input type="number" min="0" value={cantidadInput}
+                onChange={e => setCantidadInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmarCantidad(); if (e.key === 'Escape') setEditandoCantidad(false) }}
+                autoFocus
+                style={{ width: '3.5rem', background: '#0f1117', border: '1px solid #3b5bdb', borderRadius: '0.25rem', padding: '0.125rem 0.25rem', color: 'white', fontSize: '0.9rem', textAlign: 'center' }} />
+              <button onClick={confirmarCantidad} style={{ background: '#3b5bdb', color: 'white', border: 'none', borderRadius: '0.25rem', padding: '0.125rem 0.5rem', cursor: 'pointer', fontWeight: 700 }}>✓</button>
+              <button onClick={() => setEditandoCantidad(false)} style={{ background: 'none', color: '#6b7280', border: 'none', cursor: 'pointer' }}>✕</button>
+            </div>
+          ) : (
+            <span onClick={suc.estado !== 'finalizado' ? () => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(true) } : undefined}
+              style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.1rem', color: 'white', cursor: suc.estado !== 'finalizado' ? 'pointer' : 'default', borderBottom: suc.estado !== 'finalizado' ? '1px dashed #3b5bdb' : 'none' }}>
+              {suc.cantidad}u
+            </span>
+          )}
+        </div>
+        <button onClick={onCerrar} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+      </div>
+
+      {/* Talles */}
+      {suc.talles && Object.keys(suc.talles).length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.5rem' }}>
+          {Object.entries(suc.talles).map(([t, c]) => (
+            <span key={t} style={{ fontSize: '0.75rem', color: '#93c5fd' }}>
+              T{t}:<span style={{ color: 'white', fontFamily: "'Archivo Black', sans-serif" }}>{c}</span>
+              <span style={{ color: '#3b5bdb', margin: '0 0.15rem' }}>·</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Fecha y cajas si finalizado */}
+      {suc.estado === 'finalizado' && (
+        <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.375rem' }}>
+          ✓ {formatFecha(suc.fecha_finalizacion)}{suc.nro_cajas ? ' · ' + suc.nro_cajas + ' caja' + (suc.nro_cajas > 1 ? 's' : '') : ''}
+        </p>
+      )}
+
+      {/* Input cajas — aparece en estado guardado */}
+      {suc.estado === 'guardado' && (
+        <div style={{ marginBottom: '0.5rem' }}>
+          <p style={{ fontSize: '0.75rem', color: '#fcd34d', marginBottom: '0.375rem', fontWeight: 600 }}>¿Cuántas cajas?</p>
+          <div style={{ display: 'flex', gap: '0.375rem' }}>
+            <input type="number" min="1" placeholder="N° cajas" autoFocus
+              style={{ flex: 1, background: '#0f1117', border: '1px solid #b45309', borderRadius: '0.5rem', padding: '0.5rem', color: 'white', fontSize: '1rem', textAlign: 'center' }}
+              value={cajasInput} onChange={e => setCajasInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && cajasInput) onGuardarCajas(cajasInput) }} />
+            <button onClick={() => onGuardarCajas(cajasInput)} disabled={!cajasInput || cargando}
+              style={{ background: '#b45309', color: 'white', border: 'none', borderRadius: '0.5rem', padding: '0.5rem 1rem', cursor: cajasInput ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: '1rem' }}>
+              {cargando ? '...' : '✓'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Botón avanzar si pendiente o separado */}
+      {(suc.estado === 'pendiente' || suc.estado === 'separado') && (
+        <button onClick={onAvanzar} disabled={cargando}
+          style={{ width: '100%', background: suc.estado === 'pendiente' ? '#1e3a5f' : '#451a03', color: suc.estado === 'pendiente' ? '#93c5fd' : '#fcd34d', border: 'none', borderRadius: '0.5rem', padding: '0.5rem', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}>
+          {cargando ? '...' : suc.estado === 'pendiente' ? 'Marcar separado ✓' : 'Marcar guardado ✓'}
+        </button>
+      )}
     </div>
   )
 }
