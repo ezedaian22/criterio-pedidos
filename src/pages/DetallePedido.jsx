@@ -461,7 +461,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           <h2 style={{ fontSize: '0.75rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Suc. 0 — Entrega final</h2>
           {!todasNormalesOk && <p style={{ fontSize: '0.7rem', color: '#c084fc', marginBottom: '0.375rem' }}>Se habilita cuando todas las sucursales estén listas.</p>}
           <SucursalesGrid sucs={[suc0]} especial bloqueada={!todasNormalesOk}
-            onAvanzar={avanzarEstado} onGuardarCajas={finalizarSuc0}
+            onAvanzar={avanzarEstado} onGuardarCajas={(suc, n) => finalizarSuc0(n)}
             onEditarCantidad={editarCantidad} guardando={guardando} />
         </div>
       )}
