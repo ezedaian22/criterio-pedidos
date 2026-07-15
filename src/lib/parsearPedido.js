@@ -332,17 +332,21 @@ function convertirTalleSucati(t) {
 }
 
 function expandirRangoTalles(talleStr) {
-  // "6/12" → [6,8,10,12] (de 6 a 12 de 2 en 2)
-  // "3/9"  → [3,4,5,6,7,8,9] (de 3 a 9 de 1 en 1... pero Sucati va de 2 en 2)
-  // Siempre de 2 en 2
+  // "6/12" → talles Sucati 6,7,8,9 (de 1 en 1) → convertidos: 10,12,14,16
+  // Los talles Sucati van del 3 al 9, de 1 en 1
   if (!talleStr || typeof talleStr !== 'string') return []
   var partes = talleStr.split('/')
   if (partes.length !== 2) return []
   var desde = parseInt(partes[0])
   var hasta = parseInt(partes[1])
   if (isNaN(desde) || isNaN(hasta)) return []
+  // El "hasta" en el XLS ya es el talle Lavalle final, no el Sucati
+  // Ejemplo: 6/12 → desde=6 (Sucati) hasta=12 (Lavalle) → talles Sucati: 6,7,8,9
+  // Convertir "hasta" de Lavalle a Sucati para saber el rango
+  var mapaLavalleASucati = {'4':3,'6':4,'8':5,'10':6,'12':7,'14':8,'16':9}
+  var hastaEnSucati = mapaLavalleASucati[String(hasta)] || parseInt(hasta)
   var talles = []
-  for (var t = desde; t <= hasta; t += 2) talles.push(String(t))
+  for (var t = desde; t <= hastaEnSucati; t++) talles.push(String(t))
   return talles
 }
 
@@ -474,8 +478,8 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           var talleStr = row[colTalle] ? String(row[colTalle]).trim() : ''
           var precio = row[colPrecio] ? parseFloat(String(row[colPrecio]).replace(/,/g, '')) : 0
 
-          var tallesSucati = expandirRangoTalles(talleStr)
-          var tallesLavalle = tallesSucati.map(convertirTalleSucati)
+          // Los talles en el XLS de Sucati ya vienen en talles Lavalle (6/12 = T6 al T12 de 2 en 2)
+          var tallesLavalle = expandirRangoTalles(talleStr)
 
           var sucursalesArt = {}
           Object.keys(colSucs).forEach(function(nroSuc) {
@@ -838,5 +842,4 @@ function fileToBase64(file) {
     reader.onerror = function() { reject(new Error('No se pudo leer el archivo')) }
     reader.readAsDataURL(file)
   })
-  
 }
