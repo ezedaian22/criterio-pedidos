@@ -647,7 +647,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
 
             // Imágenes grandes (descartar íconos <10KB)
             var imgsGrandes = mediaIdxs.filter(function(idx) {
-              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength >= 50000
+              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength >= 100000
             })
 
             if (hojaEstampas && Object.keys(articulos).some(function(c) { return articulos[c].variantes.some(function(v){ return v.es_estampa }) })) {
