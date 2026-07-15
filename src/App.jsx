@@ -7,19 +7,6 @@ import NuevoPedido from './pages/NuevoPedido'
 import DetallePedido from './pages/DetallePedido'
 import Ajustes from './pages/Ajustes'
 
-const headerStyle = {
-  background: 'linear-gradient(135deg, #1a1d27 0%, #1e2236 100%)',
-  borderBottom: '2px solid #3b5bdb',
-  padding: '0.875rem 1.25rem',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  position: 'sticky',
-  top: 0,
-  zIndex: 50,
-  boxShadow: '0 2px 20px rgba(59,91,219,0.2)'
-}
-
 export default function App() {
   const [session, setSession] = useState(null)
   const [pagina, setPagina] = useState('dashboard')
@@ -41,19 +28,71 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0f1117' }}>
       {/* Header */}
-      <header style={headerStyle}>
+      <header style={{
+        backgroundColor: '#13162b',
+        borderBottom: '2px solid #3b5bdb',
+        padding: '1rem 1.5rem',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        boxShadow: '0 4px 24px rgba(59,91,219,0.25)'
+      }}>
+        {/* Logo */}
         <button
           onClick={() => irA('dashboard')}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer' }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0
+          }}
         >
-          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.25rem', color: 'white', letterSpacing: '-0.025em' }}>CRITERIO</span>
-          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.25rem', color: '#6b8fff', letterSpacing: '-0.025em' }}>PEDIDOS</span>
+          <span style={{
+            fontFamily: "'Archivo Black', sans-serif",
+            fontSize: '1.3rem',
+            color: '#ffffff',
+            letterSpacing: '-0.02em',
+            textShadow: '0 0 20px rgba(255,255,255,0.3)'
+          }}>CRITERIO</span>
+          <span style={{
+            fontFamily: "'Archivo Black', sans-serif",
+            fontSize: '1.3rem',
+            color: '#7b9fff',
+            letterSpacing: '-0.02em',
+            textShadow: '0 0 20px rgba(123,159,255,0.5)'
+          }}>PEDIDOS</span>
         </button>
+
+        {/* Usuario */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ color: '#c8d0e0', fontSize: '0.875rem', fontWeight: 600 }}>{session.nombre}</span>
+          <div style={{
+            backgroundColor: '#1e2547',
+            border: '1px solid #3b5bdb',
+            borderRadius: '2rem',
+            padding: '0.3rem 0.9rem',
+            color: '#c8d8ff',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            letterSpacing: '0.02em'
+          }}>
+            {session.nombre.toUpperCase()}
+          </div>
           <button
             onClick={() => irA('ajustes')}
-            style={{ color: '#c8d0e0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem' }}
+            style={{
+              color: '#7b9fff',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '1.2rem',
+              lineHeight: 1
+            }}
           >
             ⚙
           </button>
@@ -65,15 +104,19 @@ export default function App() {
         {pagina === 'dashboard' && (
           <Dashboard
             session={session}
-            onNuevoPedido={() => irA('nuevo')}
+            onNuevoPedido={(archivoPreconvertido) => {
+              setPedidoSeleccionado(archivoPreconvertido || null)
+              irA('nuevo')
+            }}
             onVerPedido={(p) => irA('detalle', p)}
           />
         )}
         {pagina === 'nuevo' && (
           <NuevoPedido
             session={session}
-            onVolver={() => irA('dashboard')}
-            onGuardado={() => irA('dashboard')}
+            archivoInicial={pedidoSeleccionado instanceof File ? pedidoSeleccionado : null}
+            onVolver={() => { setPedidoSeleccionado(null); irA('dashboard') }}
+            onGuardado={() => { setPedidoSeleccionado(null); irA('dashboard') }}
           />
         )}
         {pagina === 'detalle' && (
