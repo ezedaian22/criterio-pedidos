@@ -405,7 +405,8 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             if (vs.toLowerCase() === 'talle') colTalle = j
             if (vs.toLowerCase().includes('costo f')) colPrecio = j
             // Detectar columnas de sucursales: 0, 01, 02, ... 23
-            var numSuc = parseInt(vs)
+            // Con raw:true, el 0 viene como integer, el resto puede ser string '01','02' o int
+            var numSuc = (typeof v === 'number') ? v : parseInt(vs)
             if (!isNaN(numSuc) && numSuc >= 0 && numSuc <= 23) {
               colSucs[String(numSuc)] = j
             }
