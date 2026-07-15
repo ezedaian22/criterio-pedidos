@@ -17,13 +17,38 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
     supabase.from('clientes').select('*').then(({ data }) => setClientes(data || []))
   }, [])
 
-  // Si viene un archivo pre-convertido del Dashboard, parsearlo automáticamente
+  // Si viene un archivo pre-convertido del Dashboard, parsearlo cuando los clientes carguen
+  const archivoInicialRef = React.useRef(archivoInicial)
   useEffect(() => {
-    if (archivoInicial && clientes.length > 0) {
-      setArchivos([archivoInicial])
-      setTimeout(() => handleParsearConArchivos([archivoInicial]), 100)
+    if (archivoInicialRef.current && clientes.length > 0) {
+      var f = archivoInicialRef.current
+      archivoInicialRef.current = null
+      setArchivos([f])
+      setPaso('archivo')
+      // Parsear directamente
+      setError('')
+      setCargando(true)
+      setParseados([])
+      setProgresoParseo('Interpretando ' + f.name + '...')
+      parsearArchivoPedido(f, '', supabase)
+        .then(function(resultado) { return enriquecerConCostos(resultado) })
+        .then(function(enriquecido) {
+          var det = ((enriquecido.cliente_detectado || '')).toLowerCase()
+            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+          var clienteDetectado = null
+          if (det.includes('garcia') || det.includes('reguera')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'García Reguera' })
+          else if (det.includes('balbi')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Balbi' })
+          else if (det.includes('sucati') || det.includes('chandal')) clienteDetectado = clientes.find(function(c){ return c.nombre === 'Sucati' })
+          setParseados([{ archivo: f.name, cliente: clienteDetectado, clienteId: clienteDetectado ? clienteDetectado.id : null, data: enriquecido, error: null }])
+          setPaso('revision')
+        })
+        .catch(function(err) {
+          setParseados([{ archivo: f.name, cliente: null, clienteId: null, data: null, error: err.message }])
+          setPaso('revision')
+        })
+        .finally(function() { setCargando(false); setProgresoParseo('') })
     }
-  }, [archivoInicial, clientes])
+  }, [clientes])
 
   function detectarCliente(nombreArchivo, textoIA) {
     var texto = (nombreArchivo + ' ' + (textoIA || '')).toLowerCase()
