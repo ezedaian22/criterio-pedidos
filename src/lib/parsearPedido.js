@@ -332,21 +332,15 @@ function convertirTalleSucati(t) {
 }
 
 function expandirRangoTalles(talleStr) {
-  // "6/12" → talles Sucati 6,7,8,9 (de 1 en 1) → convertidos: 10,12,14,16
-  // Los talles Sucati van del 3 al 9, de 1 en 1
+  // Sucati pone talles Lavalle directamente: "6/12" = T6,T8,T10,T12 (de 2 en 2)
   if (!talleStr || typeof talleStr !== 'string') return []
   var partes = talleStr.split('/')
   if (partes.length !== 2) return []
   var desde = parseInt(partes[0])
   var hasta = parseInt(partes[1])
   if (isNaN(desde) || isNaN(hasta)) return []
-  // El "hasta" en el XLS ya es el talle Lavalle final, no el Sucati
-  // Ejemplo: 6/12 → desde=6 (Sucati) hasta=12 (Lavalle) → talles Sucati: 6,7,8,9
-  // Convertir "hasta" de Lavalle a Sucati para saber el rango
-  var mapaLavalleASucati = {'4':3,'6':4,'8':5,'10':6,'12':7,'14':8,'16':9}
-  var hastaEnSucati = mapaLavalleASucati[String(hasta)] || parseInt(hasta)
   var talles = []
-  for (var t = desde; t <= hastaEnSucati; t++) talles.push(String(t))
+  for (var t = desde; t <= hasta; t += 2) talles.push(String(t))
   return talles
 }
 
@@ -359,8 +353,30 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         var XLSX = window.XLSX
         if (!XLSX) { reject(new Error('SheetJS no disponible')); return }
 
-        var data = new Uint8Array(e.target.result)
-        var wb = XLSX.read(data, { type: 'array', cellDates: true })
+        var rawBuffer = e.target.result
+        var data = new Uint8Array(rawBuffer)
+        var wb = XLSX.read(data, { type: 'array', cellDates: true, raw: true })
+
+        // Pre-cargar imágenes del ZIP interno (XLSX = ZIP con xl/media/)
+        var mediaFromZip = {}
+        try {
+          if (window.JSZip) {
+            var zip = await window.JSZip.loadAsync(rawBuffer)
+            var mediaKeys = Object.keys(zip.files).filter(function(k) {
+              return k.startsWith('xl/media/') && !zip.files[k].dir
+            })
+            for (var mi = 0; mi < mediaKeys.length; mi++) {
+              var mKey = mediaKeys[mi]
+              var mExt = mKey.split('.').pop().toLowerCase()
+              if (!['png','jpg','jpeg'].includes(mExt)) continue
+              var imgBuf = await zip.files[mKey].async('arraybuffer')
+              if (imgBuf.byteLength > 10000) {
+                mediaFromZip[mi] = { buffer: imgBuf, ext: mExt, path: mKey }
+              }
+            }
+          }
+        } catch(zipErr) {
+        }
 
         // Buscar hoja NOTA DE PEDIDO (no la original)
         var sheetName = wb.SheetNames.find(function(n) {
@@ -375,7 +391,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         for (var i = 0; i < Math.min(7, rows.length); i++) {
           var row = rows[i]
           for (var j = 0; j < row.length; j++) {
-            var v = row[j]; if (!v) continue
+            var v = row[j]; if (v === null || v === undefined || v === '') continue
             var vs = String(v).toLowerCase().trim().replace(/\s+/g, ' ')
             var siguienteVal = null
             for (var k = j+1; k < row.length; k++) {
@@ -414,8 +430,6 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           break
         }
 
-        console.log('SUCATI colSucs:', JSON.stringify(colSucs))
-        console.log('SUCATI colCodProv:', colCodProv, 'colPrecio:', colPrecio)
         if (headerRowIdx === -1 || colCodProv === -1) {
           reject(new Error('No se encontró encabezado en el XLS')); return
         }
@@ -472,7 +486,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
 
         for (var i = headerRowIdx + 1; i < rows.length; i++) {
           var row = rows[i]
-          if (!row || !row[colCodProv]) continue
+          if (!row || row[colCodProv] === null || row[colCodProv] === undefined || row[colCodProv] === '') continue
           var codVal = String(row[colCodProv]).trim()
           if (!codVal || codVal.toLowerCase().includes('total') || isNaN(parseInt(codVal))) continue
 
@@ -489,7 +503,6 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             var colIdx = colSucs[nroSuc]
             var rawVal = row[colIdx]
             var cant = parseInt(rawVal)
-            if (nroSuc === '0') console.log('SUC0 check: colIdx='+colIdx+' rawVal='+JSON.stringify(rawVal)+' cant='+cant+' codigo='+codigo)
             if (!isNaN(cant) && cant > 0) {
               sucursalesArt[nroSuc] = {
                 nro_sucursal: nroSuc,
@@ -547,77 +560,98 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           }
         }
 
-        // Extraer imágenes de las hojas por artículo y subirlas a Supabase Storage
-        if (supabaseClient) {
-          for (var shIdx = 0; shIdx < wb.SheetNames.length; shIdx++) {
-            var sName = wb.SheetNames[shIdx]
-            // Hojas de variante: nombre es código de artículo o nombre de tela
-            var codigoHoja = null
-            // Buscar si el nombre de hoja coincide con un código
-            if (articulos[sName]) codigoHoja = sName
-            // O buscar por nombre parcial en la descripción
-            if (!codigoHoja) {
+        // Subir imágenes a Supabase Storage usando mediaFromZip (leído arriba via JSZip)
+        if (supabaseClient && Object.keys(mediaFromZip).length > 0) {
+          try {
+            // Mapear hojas del XLS a códigos de artículo
+            // Las hojas relevantes son las que tienen el código o el material
+            // Orden de hojas: NOTA DE PEDIDO, NOTA DE PEDIDO original, Darlon, Plush, 2226, 2220
+            // Las imágenes en xl/media/ siguen el orden en que aparecen en las hojas
+            // Mapear código → primera imagen grande disponible
+            var subidas = {}
+            var mediaIdxs = Object.keys(mediaFromZip).map(Number).sort(function(a,b){return a-b})
+
+            // Relacionar hojas con artículos
+            var hojaArt = {}
+            wb.SheetNames.forEach(function(sName) {
+              if (articulos[sName]) { hojaArt[sName] = sName; return }
               Object.keys(articulos).forEach(function(cod) {
-                if (!codigoHoja && (
-                  sName.toLowerCase().includes(cod.toLowerCase()) ||
-                  articulos[cod].descripcion_cliente.toLowerCase().split(' ').some(function(w) {
-                    return w.length > 3 && sName.toLowerCase().includes(w)
-                  })
-                )) codigoHoja = cod
+                if (hojaArt[sName]) return
+                var desc = articulos[cod].descripcion_cliente.toLowerCase()
+                var palabras = desc.split(' ').filter(function(w) { return w.length > 3 })
+                if (sName.toLowerCase().includes(cod.toLowerCase()) ||
+                    palabras.some(function(w) { return sName.toLowerCase().includes(w) })) {
+                  hojaArt[sName] = cod
+                }
               })
-            }
-            if (!codigoHoja) continue
+            })
 
-            // Obtener imágenes de la hoja via SheetJS
-            var wsImg = wb.Sheets[sName]
-            if (!wsImg['!images'] || wsImg['!images'].length === 0) continue
+            // Asignar imágenes por hoja: hoja con nombre = código de artículo → ese artículo
+            // Si no hay match directo, usar nombre de hoja que contenga palabra clave de descripción
+            // Subir la imagen más grande de cada grupo de hojas
+            var subidas = {}
+            var hojasCodigo = {} // sName → codigo artículo
 
-            var imgs = wsImg['!images']
-            // Tomar la imagen más grande (la foto del artículo)
-            var imgPrincipal = imgs.reduce(function(best, img) {
-              var sz = (img.data || '').length
-              return sz > ((best.data || '').length) ? img : best
-            }, imgs[0])
+            wb.SheetNames.forEach(function(sName) {
+              var sLow = sName.toLowerCase().trim()
+              // Match directo por código
+              if (articulos[sName]) { hojasCodigo[sName] = sName; return }
+              if (articulos[sName.trim()]) { hojasCodigo[sName] = sName.trim(); return }
+              // Match por palabras clave de la descripción
+              Object.keys(articulos).forEach(function(cod) {
+                if (hojasCodigo[sName]) return
+                var palabras = articulos[cod].descripcion_cliente.toLowerCase().split(/\s+/).filter(function(w){ return w.length > 3 })
+                if (palabras.some(function(w){ return sLow.includes(w) })) {
+                  hojasCodigo[sName] = cod
+                }
+              })
+            })
 
-            if (imgPrincipal && imgPrincipal.data) {
+            // Para cada hoja mapeada, subir su imagen más grande
+            // Relacionar path xl/media/imageN con hoja via xl/drawings/drawing*.xml
+            // Como no podemos parsear los drawings, usamos el orden: las imágenes del ZIP
+            // corresponden a las hojas en el orden en que aparecen las hojas con imágenes
+            var hojasConImg = wb.SheetNames.filter(function(s) {
+              return hojasCodigo[s] && !s.toLowerCase().includes('nota de pedido')
+            })
+
+            var imgGrandes = mediaIdxs.filter(function(idx) {
+              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength >= 50000
+            })
+
+            for (var hi = 0; hi < hojasConImg.length; hi++) {
+              var hoja = hojasConImg[hi]
+              var cod = hojasCodigo[hoja]
+              if (!cod || subidas[cod]) continue
+              // Tomar la imagen grande que corresponde a esta hoja
+              var mf = mediaFromZip[imgGrandes[hi]]
+              if (!mf) continue
               try {
-                // imgPrincipal.data es base64 en SheetJS
-                var imgData = imgPrincipal.data
-                var ext = imgPrincipal.type || 'png'
-                var fileName = 'sucati/' + codigoHoja + '_' + Date.now() + '.' + ext
-                
-                // Convertir base64 a Uint8Array
-                var binary = atob(imgData)
-                var bytes = new Uint8Array(binary.length)
-                for (var b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b)
-                var blob = new Blob([bytes], { type: 'image/' + ext })
-
+                var fileName = 'sucati/' + cod + '_' + Date.now() + '.' + mf.ext
+                var blob = new Blob([mf.buffer], { type: 'image/' + mf.ext })
                 var uploadRes = await supabaseClient.storage
                   .from('pedidos-variantes')
-                  .upload(fileName, blob, { contentType: 'image/' + ext, upsert: true })
-
+                  .upload(fileName, blob, { contentType: 'image/' + mf.ext, upsert: true })
                 if (!uploadRes.error) {
                   var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
                   if (urlRes.data) {
                     var imgUrl = urlRes.data.publicUrl
-                    articulos[codigoHoja].imagen_url = imgUrl
-                    // Asignar la misma foto a todas las variantes del artículo
-                    articulos[codigoHoja].variantes.forEach(function(vr) {
+                    articulos[cod].imagen_url = imgUrl
+                    articulos[cod].variantes.forEach(function(vr) {
                       if (!vr.imagen_url) vr.imagen_url = imgUrl
                     })
+                    subidas[cod] = true
                   }
                 }
               } catch(imgErr) {
-                console.error('Error subiendo imagen:', imgErr)
+                console.error('Error subiendo img art', cod, ':', imgErr)
               }
             }
+          } catch(e) {
+            console.error('Error imágenes:', e)
           }
         }
 
-        console.log('SUCATI articulos keys:', articulosOrden)
-        articulosOrden.forEach(function(cod) {
-          console.log('ART', cod, 'sucursales:', Object.keys(articulos[cod].sucursales))
-        })
         // Detectar razón social
         var resultado = articulosOrden.map(function(cod) {
           var art = articulos[cod]
@@ -716,7 +750,6 @@ async function llamarIA(apiKey, base64, mimeType, textoPDF, soloMeta) {
   var clean = texto.replace(/```json/g, '').replace(/```/g, '').trim()
   var m = clean.match(/\{[\s\S]*\}/)
   var parsed = JSON.parse(m ? m[0] : clean)
-  console.log('IA RESPONSE:', JSON.stringify(parsed).slice(0, 500))
   return parsed
 }
 
