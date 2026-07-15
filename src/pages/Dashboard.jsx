@@ -132,47 +132,41 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
         <div style={{ padding: '0.625rem 0.875rem', borderBottom: '1px solid #2a2d3e' }}>
           <span style={{ color: '#9ca3af', fontSize: '0.8rem' }}>📋 Instrucciones para cargar pedidos</span>
         </div>
-        <div>
-          <div style={{ padding: '0 0.875rem 0.875rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.625rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                <span style={{ flexShrink: 0 }}>🟢</span>
-                <div><span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>García Reguera</span><span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — subir el PDF como viene</span></div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                <span style={{ flexShrink: 0 }}>🟢</span>
-                <div><span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>Balbi</span><span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — subir el PDF como viene</span></div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                <span style={{ flexShrink: 0 }}>🟡</span>
-                <div>
-                  <span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>Sucati</span>
-                  <span style={{ color: '#fcd34d', fontSize: '0.75rem' }}> — usar el conversor de abajo antes de cargar</span>
-                </div>
-              </div>
+        <div style={{ padding: '0.75rem 0.875rem' }}>
+          {/* Lista de clientes */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+              <span>🟢</span>
+              <div><span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>García Reguera</span><span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — subir el PDF como viene</span></div>
             </div>
-
-            {/* Conversor Sucati integrado */}
-            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
-              <p style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Conversor Sucati XLS → Pedido</p>
-              {!xlsxFile ? (
-                <label style={{ display: 'block', background: '#1a1d27', border: '1px dashed #b45309', borderRadius: '0.5rem', padding: '0.625rem', textAlign: 'center', cursor: convirtiendo ? 'not-allowed' : 'pointer', color: '#fcd34d', fontSize: '0.8rem' }}>
-                  {convirtiendo ? '⏳ Convirtiendo...' : '📂 Paso 1 — Seleccionar .xls de Sucati'}
-                  <input type="file" accept=".xls" disabled={convirtiendo} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) convertirXLS(e.target.files[0]) }} />
-                </label>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#052e16', border: '1px solid #15803d', borderRadius: '0.5rem', padding: '0.5rem 0.75rem' }}>
-                    <span style={{ color: '#4ade80', fontSize: '0.8rem' }}>✓ {xlsxNombre}</span>
-                    <button onClick={() => { setXlsxFile(null); setXlsxNombre('') }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '0.9rem' }}>✕</button>
-                  </div>
-                  <button
-                    onClick={() => onNuevoPedido(xlsxFile)}
-                    style={{ background: '#3b5bdb', color: 'white', border: 'none', borderRadius: '0.5rem', padding: '0.625rem', fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer' }}>
-                    📋 Paso 2 — Interpretar y cargar pedido
-                  </button>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+              <span>🟢</span>
+              <div><span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>Balbi</span><span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — subir el PDF como viene</span></div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+              <span>🟡</span>
+              <div><span style={{ color: 'white', fontWeight: 600, fontSize: '0.8rem' }}>Sucati</span><span style={{ color: '#fcd34d', fontSize: '0.75rem' }}> — usar el conversor de abajo antes de cargar</span></div>
+            </div>
+          </div>
+          {/* Conversor */}
+          <div style={{ paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
+            <p style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Conversor Sucati XLS → Pedido</p>
+            {!xlsxFile ? (
+              <label style={{ display: 'block', background: '#1a1d27', border: '1px dashed #b45309', borderRadius: '0.5rem', padding: '0.625rem', textAlign: 'center', cursor: convirtiendo ? 'not-allowed' : 'pointer', color: '#fcd34d', fontSize: '0.8rem' }}>
+                {convirtiendo ? '⏳ Convirtiendo...' : '📂 Paso 1 — Seleccionar .xls de Sucati'}
+                <input type="file" accept=".xls" disabled={convirtiendo} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) convertirXLS(e.target.files[0]) }} />
+              </label>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#052e16', border: '1px solid #15803d', borderRadius: '0.5rem', padding: '0.5rem 0.75rem' }}>
+                  <span style={{ color: '#4ade80', fontSize: '0.8rem' }}>✓ {xlsxNombre}</span>
+                  <button onClick={() => { setXlsxFile(null); setXlsxNombre('') }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '0.9rem' }}>✕</button>
                 </div>
-              )}
+                <button onClick={() => onNuevoPedido(xlsxFile)} style={{ background: '#3b5bdb', color: 'white', border: 'none', borderRadius: '0.5rem', padding: '0.625rem', fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer' }}>
+                  📋 Paso 2 — Interpretar y cargar pedido
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
