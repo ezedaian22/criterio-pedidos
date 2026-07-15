@@ -174,6 +174,45 @@ function TarjetaArticulo({ art, onClick, onExpandirFoto }) {
 
 const EMPLEADOS = ['Brian', 'Barto', 'Dario', 'Marcos', 'Meli', 'Luli', 'Maxi', 'Claudia']
 
+function colorDeNombre(nombre) {
+  if (!nombre) return '#374151'
+  var n = nombre.toLowerCase()
+  // Negros
+  if (n.includes('jet black') || n.includes('negro') || n.includes('black')) return '#111111'
+  // Blancos / cremas
+  if (n.includes('off white') || n.includes('blanco') || n.includes('white') || n.includes('cream') || n.includes('manteca')) return '#F5F0E8'
+  // Grises
+  if (n.includes('ghost grey') || n.includes('gris oscuro') || n.includes('dark grey')) return '#4B5563'
+  if (n.includes('gris claro') || n.includes('silver') || n.includes('celeste silver')) return '#9CA3AF'
+  if (n.includes('gris') || n.includes('grey') || n.includes('gray')) return '#6B7280'
+  // Marrones / chocolates
+  if (n.includes('chocolate') || n.includes('choco') || n.includes('brown')) return '#6B2D0E'
+  if (n.includes('hazelnut') || n.includes('avellana')) return '#9A6240'
+  if (n.includes('camel') || n.includes('visón') || n.includes('vison')) return '#C19A6B'
+  if (n.includes('manteca')) return '#E8D5A3'
+  // Rojos / rosas
+  if (n.includes('granada') || n.includes('tinto') || n.includes('bordo') || n.includes('burgundy')) return '#7B1B1B'
+  if (n.includes('rosa bb') || n.includes('rosa') || n.includes('pink') || n.includes('old rose')) return '#E8A0A0'
+  if (n.includes('berenjena') || n.includes('violet')) return '#4B1A5A'
+  if (n.includes('malva') || n.includes('mauve')) return '#C084A0'
+  // Verdes
+  if (n.includes('militar') || n.includes('verde') || n.includes('green')) return '#3D5A2E'
+  // Azules
+  if (n.includes('marino') || n.includes('navy') || n.includes('azul')) return '#1A2B5A'
+  if (n.includes('celeste') || n.includes('sky') || n.includes('nube') || n.includes('blue')) return '#7BB8D4'
+  // Lilas / morados
+  if (n.includes('lila') || n.includes('lavanda') || n.includes('purple')) return '#9B7BB8'
+  // Flat white / blancos especiales
+  if (n.includes('flat white')) return '#E8E8E8'
+  // Default gris oscuro
+  return '#374151'
+}
+
+function esColorClaro(hex) {
+  var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
+  return (r*299 + g*587 + b*114) / 1000 > 160
+}
+
 function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFoto }) {
   const [sucursales, setSucursales] = useState(articulo.pedido_sucursales || [])
   const [guardando, setGuardando] = useState(null)
@@ -386,21 +425,23 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
             <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Colores / Variantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              {variantes.map(v => (
-                <div key={v.id} style={{ background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.5rem', padding: '0.375rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                  {v.imagen_url && (
-                    <img
-                      src={v.imagen_url} alt={v.nombre}
-                      onClick={() => onExpandirFoto(v.imagen_url)}
-                      style={{ width: '2.5rem', height: '2.5rem', objectFit: 'cover', borderRadius: '0.25rem', cursor: 'zoom-in', flexShrink: 0 }}
-                    />
-                  )}
-                  <div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'white' }}>{v.nombre}</div>
-                    <div style={{ fontSize: '0.72rem', color: '#6b7280' }}><span style={{ fontFamily: "'Archivo Black', sans-serif", color: '#93c5fd' }}>{v.cantidad}</span> u</div>
+              {variantes.map(v => {
+                const color = colorDeNombre(v.nombre)
+                const textoOscuro = esColorClaro(color)
+                return (
+                  <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', minWidth: '5rem' }}>
+                    {/* Círculo de color */}
+                    <div style={{ background: color, height: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: '2rem', height: '2rem', borderRadius: '50%', background: color, border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 0 0 1px rgba(0,0,0,0.3)' }} />
+                    </div>
+                    {/* Nombre y cantidad */}
+                    <div style={{ background: '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'white', lineHeight: 1.2 }}>{v.nombre}</div>
+                      <div style={{ fontSize: '0.65rem', color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
