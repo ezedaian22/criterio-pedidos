@@ -711,17 +711,21 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               }
             } // fin if hojaEstampas
 
-            // Foto principal del artículo: imagen >1MB de la hoja con el código del artículo
+            // Foto principal: una imagen por artículo, en orden de hojasConImg
+            // Usar contador separado (no hi2) para no desincronizar hoja vs imagen
             var imgsArticulo = mediaIdxs.filter(function(idx) {
-              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 1000000
+              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 100000
             })
+            var imgContador = 0
             for (var hi2 = 0; hi2 < hojasConImg.length; hi2++) {
               var hoja2 = hojasConImg[hi2]
               var cod2 = hojasCodigo[hoja2]
-              if (!cod2 || articulos[cod2].imagen_url) continue
-              // Solo hojas con código de artículo (no Modal Est)
+              if (!cod2) continue
               if (hoja2.toLowerCase().includes('modal') || hoja2.toLowerCase().includes('estampa')) continue
-              var mfArt = mediaFromZip[imgsArticulo[hi2]] || mediaFromZip[imgsArticulo[0]]
+              // Si ya tiene imagen no consumir contador
+              if (articulos[cod2].imagen_url) continue
+              var mfArt = mediaFromZip[imgsArticulo[imgContador]]
+              imgContador++
               if (!mfArt) continue
               try {
                 var fileNameArt = 'sucati/art_' + cod2 + '_' + Date.now() + '.' + mfArt.ext
