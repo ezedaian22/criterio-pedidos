@@ -626,11 +626,9 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                 var drRelPath = 'xl/drawings/_rels/drawing' + dNum + '.xml.rels'
                 if (!zip.files[drRelPath]) continue
                 var drRelXml = await zip.files[drRelPath].async('string')
-                var imgMatches = drRelXml.match(/\.\.\\/media\/([^"]+)/g) || []
-                // también sin backslash
-                if (!imgMatches.length) imgMatches = drRelXml.match(/\.\.\/media\/([^"]+)/g) || []
+                var imgMatches = drRelXml.match(/\.\.\/media\/([^"]+)/g) || []
                 for (var ii = 0; ii < imgMatches.length; ii++) {
-                  var fname = imgMatches[ii].replace(/\.\.[\\/]media[\\/]/, '')
+                  var fname = imgMatches[ii].replace(/\.\.\/media\//, '')
                   var mIdx2 = mediaNombreAIdx[fname]
                   if (mIdx2 !== undefined) {
                     var sz = mediaFromZip[mIdx2] ? mediaFromZip[mIdx2].buffer.byteLength : 0
