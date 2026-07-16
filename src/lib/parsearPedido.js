@@ -345,16 +345,13 @@ function expandirRangoTalles(talleStr) {
 }
 
 async function parsearSucatiXLS(archivo, supabaseClient) {
-  // Usar SheetJS (XLSX) para leer el XLS en el browser
-  return new Promise(function(resolve, reject) {
-    var reader = new FileReader()
-    reader.onload = async function(e) {
-      try {
-        var XLSX = window.XLSX
-        if (!XLSX) { reject(new Error('SheetJS no disponible')); return }
+  // Usar arrayBuffer() nativo en lugar de FileReader para mayor compatibilidad
+  try {
+    var XLSX = window.XLSX
+    if (!XLSX) { throw new Error('SheetJS no disponible') }
 
-        var rawBuffer = e.target.result
-        var data = new Uint8Array(rawBuffer)
+    var rawBuffer = await archivo.arrayBuffer()
+    var data = new Uint8Array(rawBuffer)
         var wb = XLSX.read(data, { type: 'array', cellDates: true, raw: true })
 
         // Pre-cargar imágenes del ZIP interno (XLSX = ZIP con xl/media/)
@@ -768,18 +765,14 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           ? 'SUCATI S.R.L. + CHANDAL S.R.L.'
           : tieneChandal ? 'CHANDAL S.R.L.' : 'SUCATI S.R.L.'
 
-        resolve({
+        return {
           articulos: resultado,
           fechaPedido: fechaPedido,
           fechaEntregaDesde: fechaEntregaDesde,
           fechaEntregaHasta: fechaEntregaHasta,
           razonSocial: razonSocial
-        })
-      } catch(err) { reject(err) }
-    }
-    reader.onerror = function() { reject(new Error('Error leyendo archivo')) }
-    reader.readAsArrayBuffer(archivo)
-  })
+        }
+  } catch(err) { throw err }
 }
 
 function formatearFechaXLS(val) {
@@ -978,4 +971,3 @@ function fileToBase64(file) {
     reader.readAsDataURL(file)
   })
 }
-
