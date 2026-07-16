@@ -711,29 +711,49 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               }
             } // fin if hojaEstampas
 
-            // Foto principal: una imagen por artículo, en orden de hojasConImg
-            // Usar contador separado (no hi2) para no desincronizar hoja vs imagen
-            var imgsArticulo = mediaIdxs.filter(function(idx) {
-              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 100000
-            })
-            var imgContador = 0
-            for (var hi2 = 0; hi2 < hojasConImg.length; hi2++) {
-              var hoja2 = hojasConImg[hi2]
-              var cod2 = hojasCodigo[hoja2]
-              if (!cod2) continue
-              if (hoja2.toLowerCase().includes('modal') || hoja2.toLowerCase().includes('estampa')) continue
-              // Si ya tiene imagen no consumir contador
-              if (articulos[cod2].imagen_url) continue
-              var mfArt = mediaFromZip[imgsArticulo[imgContador]]
-              imgContador++
+            // Foto principal: buscar la imagen más grande de la hoja con nombre = código exacto
+            // Ej: hoja "2269" → imagen principal de 2269, hoja "Plush bondeado" se ignora para foto principal
+            for (var ai3 = 0; ai3 < articulosOrden.length; ai3++) {
+              var cod3 = articulosOrden[ai3]
+              if (articulos[cod3].imagen_url) continue
+              // Buscar hoja cuyo nombre ES el código exacto
+              var hojaExacta = wb.SheetNames.find(function(s) { return s.trim() === cod3 })
+              if (!hojaExacta) continue
+              // Encontrar la imagen más grande de esa hoja via mediaFromZip
+              // mediaFromZip tiene path = "xl/media/imageN.png"
+              // Necesitamos saber qué imágenes pertenecen a esa hoja
+              // Como no tenemos zip acá, usamos el índice: las imágenes están ordenadas
+              // y la hoja con código exacto siempre tiene la foto del artículo (>100KB)
+              // Buscar en mediaFromZip la imagen más grande no usada aún
+              var mejorIdx = null
+              var mejorSize = 0
+              mediaIdxs.forEach(function(idx) {
+                var mf = mediaFromZip[idx]
+                if (!mf) return
+                var sz = mf.buffer.byteLength
+                if (sz > mejorSize) {
+                  // Verificar que este path corresponde a la hoja correcta
+                  // El nombre del archivo sigue el orden de aparición en el ZIP
+                  // Las hojas con código (2249, 2269, 2175) tienen las imágenes más grandes
+                  mejorSize = sz
+                  mejorIdx = idx
+                }
+              })
+              // Estrategia simple: ordenar hojas de código por posición y asignar imágenes grandes en orden
+              // Las imágenes grandes (>500KB) corresponden exactamente a las hojas de código
+              var imgsGrandesOrdenadas = mediaIdxs.filter(function(idx) {
+                return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 500000
+              })
+              var posEnOrden = articulosOrden.indexOf(cod3)
+              var mfArt = mediaFromZip[imgsGrandesOrdenadas[posEnOrden]]
               if (!mfArt) continue
               try {
-                var fileNameArt = 'sucati/art_' + cod2 + '_' + Date.now() + '.' + mfArt.ext
+                var fileNameArt = 'sucati/art_' + cod3 + '_' + Date.now() + '.' + mfArt.ext
                 var blobArt = new Blob([mfArt.buffer], { type: 'image/' + mfArt.ext })
                 var upArt = await supabaseClient.storage.from('pedidos-variantes').upload(fileNameArt, blobArt, { contentType: 'image/' + mfArt.ext, upsert: true })
                 if (!upArt.error) {
                   var urlArt = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileNameArt)
-                  if (urlArt.data) articulos[cod2].imagen_url = urlArt.data.publicUrl
+                  if (urlArt.data) articulos[cod3].imagen_url = urlArt.data.publicUrl
                 }
               } catch(e) { console.error('Error foto artículo:', e) }
             }
