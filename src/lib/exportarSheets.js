@@ -243,10 +243,8 @@ export async function exportarArticuloSheets(articulo, pedido) {
   rows.push(['TOTAL', totalCantidad, ...totalPorTalle, '', '', ''])
 
   // Crear spreadsheet
-  const fechaEntregaStr = pedido.fecha_entrega
-    ? new Date(pedido.fecha_entrega).toLocaleDateString('es-AR').replace(/\//g, '-')
-    : ''
-  const titulo = 'Art_' + codigo + '_' + cliente + (nroPedido ? '_P' + nroPedido : '') + (fechaEntregaStr ? '_' + fechaEntregaStr : '')
+  const fechaHoy = new Date().toLocaleDateString('es-AR').replace(/\//g, '-')
+  const titulo = 'Art_' + codigo + '_' + cliente + (nroPedido ? '_P' + nroPedido : '') + '_' + fechaHoy
   const sheet = await crearSpreadsheet(token, titulo)
   const spreadsheetId = sheet.spreadsheetId
   const sheetId = sheet.sheets[0].properties.sheetId
