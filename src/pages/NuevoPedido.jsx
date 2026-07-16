@@ -92,7 +92,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
             })
           }
           var buf = await archivo.arrayBuffer()
-          var wb = window.XLSX.read(new Uint8Array(buf), { type: 'array', cellStyles: true, cellDates: true })
+          var wb = window.XLSX.read(new Uint8Array(buf), { type: 'array', raw: true })
           var arr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
           var blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
           archivo = new File([blob], archivo.name.slice(0, -4) + '.xlsx', { type: blob.type })
@@ -116,7 +116,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
         }
         // Fallback por nombre de archivo
         if (!clienteDetectado) {
-          clienteDetectado = detectarCliente(archivo.name, JSON.stringify(enriquecido).toLowerCase())
+          clienteDetectado = detectarCliente(archivo.name, JSON.stringify(enriquecido || {}).toLowerCase())
         }
 
         resultados.push({
