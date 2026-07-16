@@ -356,7 +356,6 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
 
         // Pre-cargar imágenes del ZIP interno (XLSX = ZIP con xl/media/)
         var mediaFromZip = {}
-        var zip = null
         try {
           // Cargar JSZip dinámicamente si no está en window
           if (!window.JSZip) {
@@ -369,7 +368,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             })
           }
           if (window.JSZip) {
-            zip = await window.JSZip.loadAsync(rawBuffer)
+            var zip = await window.JSZip.loadAsync(rawBuffer)
             var mediaKeys = Object.keys(zip.files).filter(function(k) {
               return k.startsWith('xl/media/') && !zip.files[k].dir
             })
@@ -549,19 +548,18 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           if (mMod) { artActual = mMod[1]; continue }
 
           if (artActual && articulos[artActual]) {
-            // Bug fix: buscar nombre solo en cols 0-5 para evitar agarrar textos largos de condiciones (col 21+)
+            // buscar nombre solo en cols 0-5 para evitar textos largos de condiciones (col 21+)
             var primerVal = null
             for (var ci = 0; ci <= 5; ci++) {
               if (row[ci] !== null && row[ci] !== undefined && row[ci] !== '') { primerVal = row[ci]; break }
             }
-            if (!primerVal) continue  // fila sin datos en cols relevantes → no resetear artActual
+            if (!primerVal) continue  // fila vacía en cols relevantes → no resetear artActual
             var nombre = String(primerVal).trim()
             if (/^\d+$/.test(nombre)) continue
             var ignorar = ['modulo','cantidad','curva','entrega','observ','total','revisar','horario','facturar','proveedor','tel','condic','mail']
             if (!nombre || ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
 
-            // Bug fix: leer cantidad desde col 5 ("XX u" / "XX UNIDADES") — es el campo correcto siempre
-            // Fallback: buscar número en cols 4-12 evitando col 3 donde está el nombre (ej: "VAR 1" → 1)
+            // leer cantidad desde col 5 ("6 u", "20 UNIDADES") — evita leer el número del nombre ("VAR 1" → 1)
             var cantVar = 0
             var colCant5 = row[5]
             if (colCant5 !== null && colCant5 !== undefined && colCant5 !== '') {
@@ -583,117 +581,157 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           }
         }
 
-        // Subir imágenes a Supabase Storage usando mediaFromZip + zip (ya en scope)
-        if (supabaseClient && zip && Object.keys(mediaFromZip).length > 0) {
+        // Subir imágenes a Supabase Storage usando mediaFromZip (leído arriba via JSZip)
+        if (supabaseClient && Object.keys(mediaFromZip).length > 0) {
           try {
+            // Mapear hojas del XLS a códigos de artículo
+            // Las hojas relevantes son las que tienen el código o el material
+            // Orden de hojas: NOTA DE PEDIDO, NOTA DE PEDIDO original, Darlon, Plush, 2226, 2220
+            // Las imágenes en xl/media/ siguen el orden en que aparecen en las hojas
+            // Mapear código → primera imagen grande disponible
+            var subidas = {}
             var mediaIdxs = Object.keys(mediaFromZip).map(Number).sort(function(a,b){return a-b})
 
-            // Construir mapa: nombre de archivo imagen → índice en mediaFromZip
-            // mediaFromZip[idx].path = "xl/media/imageN.png"
-            var mediaNombreAIdx = {}
-            mediaIdxs.forEach(function(idx) {
-              var fname = mediaFromZip[idx].path.split('/').pop()
-              mediaNombreAIdx[fname] = idx
+            // Relacionar hojas con artículos
+            var hojaArt = {}
+            wb.SheetNames.forEach(function(sName) {
+              if (articulos[sName]) { hojaArt[sName] = sName; return }
+              Object.keys(articulos).forEach(function(cod) {
+                if (hojaArt[sName]) return
+                var desc = (articulos[cod].descripcion_cliente || '').toLowerCase()
+                var palabras = desc.split(' ').filter(function(w) { return w.length > 3 })
+                if (sName.toLowerCase().includes(cod.toLowerCase()) ||
+                    palabras.some(function(w) { return sName.toLowerCase().includes(w) })) {
+                  hojaArt[sName] = cod
+                }
+              })
             })
 
-            // Construir mapa: hoja → imagen más grande (via drawings XML del zip)
-            var hojaAMejorImg = {} // sName → idx en mediaFromZip
-            for (var si3 = 0; si3 < wb.SheetNames.length; si3++) {
-              var sName3 = wb.SheetNames[si3]
-              var shRelPath = 'xl/worksheets/_rels/sheet' + (si3 + 1) + '.xml.rels'
-              if (!zip.files[shRelPath]) continue
-              var shRelXml = await zip.files[shRelPath].async('string')
-              var drawNums = shRelXml.match(/drawing(\d+)\.xml/g) || []
-              var mejorSz = 0
-              var mejorIdx = null
-              for (var di = 0; di < drawNums.length; di++) {
-                var dNum = drawNums[di].match(/\d+/)[0]
-                var drRelPath = 'xl/drawings/_rels/drawing' + dNum + '.xml.rels'
-                if (!zip.files[drRelPath]) continue
-                var drXml = await zip.files[drRelPath].async('string')
-                var fnames = drXml.match(/\.\.\/media\/([^"<]+)/g) || []
-                for (var fi = 0; fi < fnames.length; fi++) {
-                  var fname = fnames[fi].replace('../media/', '')
-                  var idx = mediaNombreAIdx[fname]
-                  if (idx === undefined) continue
-                  var sz = mediaFromZip[idx].buffer.byteLength
-                  if (sz > mejorSz) { mejorSz = sz; mejorIdx = idx }
-                }
-              }
-              if (mejorIdx !== null && mejorSz >= 100000) hojaAMejorImg[sName3] = mejorIdx
-            }
+            // Asignar imágenes por hoja: hoja con nombre = código de artículo → ese artículo
+            // Si no hay match directo, usar nombre de hoja que contenga palabra clave de descripción
+            // Subir la imagen más grande de cada grupo de hojas
+            var subidas = {}
+            var hojasCodigo = {} // sName → codigo artículo
 
-            // Detectar modo estampas
+            wb.SheetNames.forEach(function(sName) {
+              var sLow = sName.toLowerCase().trim()
+              // Match directo por código
+              if (articulos[sName]) { hojasCodigo[sName] = sName; return }
+              if (articulos[sName.trim()]) { hojasCodigo[sName] = sName.trim(); return }
+              // Hoja de estampas/modal → asignar a TODOS los artículos
+              if (sLow.includes('modal est') || sLow.includes('estampa') || sLow.includes('estampas')) {
+                Object.keys(articulos).forEach(function(cod) {
+                  if (!hojasCodigo[sName]) hojasCodigo[sName] = cod // primer artículo
+                  // Marcar todos los artículos para recibir esta imagen
+                  articulos[cod]._hojaEstampa = sName
+                })
+                return
+              }
+              // Match por palabras clave de la descripción
+              Object.keys(articulos).forEach(function(cod) {
+                if (hojasCodigo[sName]) return
+                var palabras = (articulos[cod].descripcion_cliente || '').toLowerCase().split(/\s+/).filter(function(w){ return w.length > 3 })
+                if (palabras.some(function(w){ return sLow.includes(w) })) {
+                  hojasCodigo[sName] = cod
+                }
+              })
+            })
+
+            // Para cada hoja mapeada, subir su imagen más grande
+            // Relacionar path xl/media/imageN con hoja via xl/drawings/drawing*.xml
+            // Como no podemos parsear los drawings, usamos el orden: las imágenes del ZIP
+            // corresponden a las hojas en el orden en que aparecen las hojas con imágenes
+            var hojasConImg = wb.SheetNames.filter(function(s) {
+              return hojasCodigo[s] && !s.toLowerCase().includes('nota de pedido')
+            })
+
+            // Estrategia de imágenes:
+            // 1. Si hay hoja de estampas (Modal Est): subir UNA imagen por variante en orden
+            // 2. Si no: subir la imagen más representativa por artículo (muestrario de colores)
+
+            // Detectar si hay hoja de estampas
             var hojaEstampas = wb.SheetNames.find(function(s) {
               return s.toLowerCase().includes('modal est') || s.toLowerCase().includes('estampa')
             })
-            var tieneEstampas = hojaEstampas && Object.keys(articulos).some(function(c) {
-              return articulos[c].variantes.some(function(v){ return v.es_estampa })
+
+            // Imágenes grandes (descartar íconos <10KB)
+            var imgsGrandes = mediaIdxs.filter(function(idx) {
+              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength >= 100000
             })
 
-            // MODO ESTAMPAS: imágenes entre 100KB y 950KB de la hoja Modal Est → una por variante
-            if (tieneEstampas) {
+            if (hojaEstampas && Object.keys(articulos).some(function(c) { return articulos[c].variantes.some(function(v){ return v.es_estampa }) })) {
+              // Modo estampas: imágenes entre 100KB y 950KB son estampas
+              // Imágenes >1MB son fotos del artículo terminado — no las queremos acá
               var imgsEstampas = mediaIdxs.filter(function(idx) {
-                var sz = mediaFromZip[idx].buffer.byteLength
+                var sz = mediaFromZip[idx] ? mediaFromZip[idx].buffer.byteLength : 0
                 return sz >= 100000 && sz <= 950000
               })
-              var viGlobal = 0
+              // Modo estampas: asignar imágenes en orden a cada variante de cada artículo
+              // Las imágenes están ordenadas por posición en el ZIP igual al orden de la hoja
+              // Cada variante recibe su propia imagen
+              articulosOrden.forEach(function(cod) {
+                var art = articulos[cod]
+                var variantesEstampa = art.variantes.filter(function(v) { return v.es_estampa })
+                if (variantesEstampa.length === 0) return
+                art._variantesParaImg = variantesEstampa
+                art._imgIdxStart = 0  // siempre desde 0 — las estampas son compartidas entre artículos
+              })
+
+              // Procesar uploads de estampas
               for (var ai = 0; ai < articulosOrden.length; ai++) {
                 var cod = articulosOrden[ai]
-                var variantesEstampa = articulos[cod].variantes.filter(function(v){ return v.es_estampa })
-                for (var vi = 0; vi < variantesEstampa.length; vi++) {
-                  var mf = mediaFromZip[imgsEstampas[viGlobal]]
-                  viGlobal++
+                var art = articulos[cod]
+                if (!art._variantesParaImg) continue
+
+                for (var vi = 0; vi < art._variantesParaImg.length; vi++) {
+                  var variante = art._variantesParaImg[vi]
+                  var imgIdxAbs = art._imgIdxStart + vi
+                  var mf = mediaFromZip[imgsEstampas[imgIdxAbs]]
                   if (!mf) continue
                   try {
-                    var fn = 'sucati/estampa_' + cod + '_v' + vi + '_' + Date.now() + '.' + mf.ext
-                    var bl = new Blob([mf.buffer], { type: 'image/' + mf.ext })
-                    var ur = await supabaseClient.storage.from('pedidos-variantes').upload(fn, bl, { contentType: 'image/' + mf.ext, upsert: true })
-                    if (!ur.error) {
-                      var pu = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fn)
-                      if (pu.data) variantesEstampa[vi].imagen_url = pu.data.publicUrl
+                    var fileName = 'sucati/estampa_' + cod + '_v' + vi + '_' + Date.now() + '.' + mf.ext
+                    var blob = new Blob([mf.buffer], { type: 'image/' + mf.ext })
+                    var uploadRes = await supabaseClient.storage
+                      .from('pedidos-variantes')
+                      .upload(fileName, blob, { contentType: 'image/' + mf.ext, upsert: true })
+                    if (!uploadRes.error) {
+                      var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
+                      if (urlRes.data) {
+                        // Asignar esta imagen a la variante específica
+                        variante.imagen_url = urlRes.data.publicUrl
+                        // NO asignar estampa como foto principal del artículo
+                        // La foto del artículo viene de su hoja específica (2278, 2180, etc.)
+                      }
                     }
-                  } catch(e) { console.error('Error estampa:', e) }
+                  } catch(imgErr) {
+                    console.error('Error subiendo estampa:', imgErr)
+                  }
                 }
               }
-            }
+            } // fin if hojaEstampas
 
-            // FOTO PRINCIPAL: usar hojaAMejorImg — prioridad hoja con código exacto, luego hoja por palabras clave
-            for (var ai2 = 0; ai2 < articulosOrden.length; ai2++) {
-              var cod2 = articulosOrden[ai2]
-              if (articulos[cod2].imagen_url) continue
-              var imgIdx = null
-
-              // Prioridad 1: hoja con nombre = código exacto ("2269", "2249", etc.)
-              if (hojaAMejorImg[cod2] !== undefined) {
-                imgIdx = hojaAMejorImg[cod2]
-              }
-              // Prioridad 2: hoja con nombre de material que matchea descripción
-              if (imgIdx === null) {
-                wb.SheetNames.forEach(function(sName) {
-                  if (imgIdx !== null) return
-                  if (sName === cod2) return
-                  if (hojaAMejorImg[sName] === undefined) return
-                  var sLow = sName.toLowerCase().trim()
-                  var palabras = (articulos[cod2].descripcion_cliente || '').toLowerCase().split(/\s+/).filter(function(w){ return w.length > 3 })
-                  if (palabras.some(function(w){ return sLow.includes(w) })) imgIdx = hojaAMejorImg[sName]
-                })
-              }
-
-              if (imgIdx === null) continue
-              var mfArt = mediaFromZip[imgIdx]
+            // Foto principal del artículo: imagen >1MB de la hoja con el código del artículo
+            var imgsArticulo = mediaIdxs.filter(function(idx) {
+              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 1000000
+            })
+            for (var hi2 = 0; hi2 < hojasConImg.length; hi2++) {
+              var hoja2 = hojasConImg[hi2]
+              var cod2 = hojasCodigo[hoja2]
+              if (!cod2 || articulos[cod2].imagen_url) continue
+              // Solo hojas con código de artículo (no Modal Est)
+              if (hoja2.toLowerCase().includes('modal') || hoja2.toLowerCase().includes('estampa')) continue
+              var mfArt = mediaFromZip[imgsArticulo[hi2]] || mediaFromZip[imgsArticulo[0]]
               if (!mfArt) continue
               try {
-                var fnArt = 'sucati/art_' + cod2 + '_' + Date.now() + '.' + mfArt.ext
-                var blArt = new Blob([mfArt.buffer], { type: 'image/' + mfArt.ext })
-                var upArt = await supabaseClient.storage.from('pedidos-variantes').upload(fnArt, blArt, { contentType: 'image/' + mfArt.ext, upsert: true })
+                var fileNameArt = 'sucati/art_' + cod2 + '_' + Date.now() + '.' + mfArt.ext
+                var blobArt = new Blob([mfArt.buffer], { type: 'image/' + mfArt.ext })
+                var upArt = await supabaseClient.storage.from('pedidos-variantes').upload(fileNameArt, blobArt, { contentType: 'image/' + mfArt.ext, upsert: true })
                 if (!upArt.error) {
-                  var urlArt = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fnArt)
+                  var urlArt = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileNameArt)
                   if (urlArt.data) articulos[cod2].imagen_url = urlArt.data.publicUrl
                 }
-              } catch(e) { console.error('Error foto art:', e) }
+              } catch(e) { console.error('Error foto artículo:', e) }
             }
-
           } catch(e) {
             console.error('Error imágenes:', e)
           }
