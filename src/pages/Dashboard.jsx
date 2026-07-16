@@ -137,7 +137,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Pedidos</h1>
-        <button className="btn-primary" style={{ fontSize: '0.875rem' }} onClick={onNuevoPedido}>+ Nuevo pedido</button>
+        <button className="btn-primary" style={{ fontSize: '0.875rem' }} onClick={() => onNuevoPedido()}>+ Nuevo pedido</button>
       </div>
 
       {/* Banner instrucciones + conversor */}
@@ -198,7 +198,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
         <div style={{ textAlign: 'center', color: '#6b7280', padding: '3rem' }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📦</div>
           <div>{busqueda ? 'Sin resultados para "' + busqueda + '"' : 'No hay pedidos'}</div>
-          {!busqueda && <button className="btn-primary" style={{ marginTop: '1rem', fontSize: '0.875rem' }} onClick={onNuevoPedido}>Cargar primer pedido</button>}
+          {!busqueda && <button className="btn-primary" style={{ marginTop: '1rem', fontSize: '0.875rem' }} onClick={() => onNuevoPedido()}>Cargar primer pedido</button>}
         </div>
       ) : (
         <div className="space-y-3">
