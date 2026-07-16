@@ -542,7 +542,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         for (var i = headerRowIdx + 1; i < rows.length; i++) {
           var row = rows[i]
           if (!row) continue
-          var textFila = row.filter(Boolean).map(String).join(' ')
+          var textFila = row.filter(function(v){ return v !== null && v !== undefined && v !== '' }).map(String).join(' ')
 
           var mMod = textFila.match(/m[oó]dulo\s+art\s+(\d+)/i)
           if (mMod) { artActual = mMod[1]; continue }
