@@ -80,6 +80,25 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
       setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + archivos.length + ': ' + archivo.name + '...')
 
       try {
+        // Si es .xls, convertir a .xlsx en memoria antes de parsear
+        if (archivo.name.toLowerCase().endsWith('.xls') && !archivo.name.toLowerCase().endsWith('.xlsx')) {
+          setProgresoParseo('Convirtiendo ' + archivo.name + '...')
+          if (!window.XLSX) {
+            await new Promise(function(resolve, reject) {
+              var s = document.createElement('script')
+              s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+              s.onload = resolve; s.onerror = reject
+              document.head.appendChild(s)
+            })
+          }
+          var buf = await archivo.arrayBuffer()
+          var wb = window.XLSX.read(new Uint8Array(buf), { type: 'array', cellStyles: true, cellDates: true })
+          var arr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+          var blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+          archivo = new File([blob], archivo.name.slice(0, -4) + '.xlsx', { type: blob.type })
+          setProgresoParseo('Interpretando ' + (i + 1) + ' de ' + archivos.length + ': ' + archivo.name + '...')
+        }
+
         var resultado = await parsearArchivoPedido(archivo, '', supabase)
         var enriquecido = await enriquecerConCostos(resultado)
 
