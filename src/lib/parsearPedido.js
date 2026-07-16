@@ -711,46 +711,73 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               }
             } // fin if hojaEstampas
 
-            // Variantes con imágenes de hoja de material (Camisaco, Darlon, Plush bondeado)
-            // Estas hojas tienen imágenes medianas (~100-200KB) = fotos de tela por variante
-            // Solo aplica cuando el artículo tiene variantes sin imagen_url
-            Object.keys(articulos).forEach(function(cod) {
-              var art = articulos[cod]
-              var variantesSinImg = art.variantes.filter(function(v) { return !v.imagen_url && !v.es_estampa })
-              if (variantesSinImg.length === 0) return
-              // Buscar hoja de material que mapea a este código
-              var hojasMaterial = wb.SheetNames.filter(function(s) {
-                if (s === cod) return false
-                if (s.toLowerCase().includes('nota de pedido')) return false
-                if (s.toLowerCase().includes('modal est')) return false
-                return hojasCodigo[s] === cod
-              })
-              if (hojasMaterial.length === 0) return
-              // Imágenes medianas de esas hojas (100KB-500KB) en orden
-              var imgsMaterial = mediaIdxs.filter(function(idx) {
+            // Variantes con imágenes: leer drawings XML del zip para mapear hoja → imágenes exactas
+            // Construir mapa: nombre archivo imagen → índice en mediaFromZip
+            if (zip) {
+              var mediaNombreAIdx2 = {}
+              mediaIdxs.forEach(function(idx) {
                 var mf = mediaFromZip[idx]
-                if (!mf) return false
-                var sz = mf.buffer.byteLength
-                return sz >= 100000 && sz <= 500000
+                if (!mf) return
+                var fname = mf.path.split('/').pop()
+                mediaNombreAIdx2[fname] = idx
               })
-              // No podemos usar await dentro de forEach, así que procesamos con promesas individuales
-              var promesasVar = variantesSinImg.map(function(variante2, vi2) {
-                var mfVar = mediaFromZip[imgsMaterial[vi2]]
-                if (!mfVar) return Promise.resolve()
-                var fnVar = 'sucati/var_' + cod + '_v' + vi2 + '_' + Date.now() + '.' + mfVar.ext
-                var blVar = new Blob([mfVar.buffer], { type: 'image/' + mfVar.ext })
-                return supabaseClient.storage.from('pedidos-variantes')
-                  .upload(fnVar, blVar, { contentType: 'image/' + mfVar.ext, upsert: true })
-                  .then(function(upVar) {
-                    if (!upVar.error) {
-                      var urlVar = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fnVar)
-                      if (urlVar.data) variante2.imagen_url = urlVar.data.publicUrl
+
+              // Para cada artículo con variantes sin imagen, buscar su hoja de material
+              // y leer las imágenes medianas (100KB-500KB) de esa hoja en orden desc tamaño
+              var procesarVariantesHoja = async function(cod) {
+                var art = articulos[cod]
+                var variantesSinImg = art.variantes.filter(function(v) { return !v.imagen_url && !v.es_estampa })
+                if (variantesSinImg.length === 0) return
+                // Hoja de material = hoja que mapea a este código y no es la hoja de código exacto
+                var hojasMat = wb.SheetNames.filter(function(s) {
+                  if (s === cod || s.toLowerCase().includes('nota de pedido') || s.toLowerCase().includes('modal')) return false
+                  return hojasCodigo[s] === cod
+                })
+                if (hojasMat.length === 0) return
+                var hojaMat = hojasMat[0]
+                var shIdx = wb.SheetNames.indexOf(hojaMat) + 1
+                var shRelPath2 = 'xl/worksheets/_rels/sheet' + shIdx + '.xml.rels'
+                if (!zip.files[shRelPath2]) return
+                var shRelXml2 = await zip.files[shRelPath2].async('string')
+                var drawNums2 = shRelXml2.match(/drawing(\d+)\.xml/g) || []
+                var imgsHoja = []
+                for (var di2 = 0; di2 < drawNums2.length; di2++) {
+                  var dNum2 = drawNums2[di2].match(/\d+/)[0]
+                  var drRelPath2 = 'xl/drawings/_rels/drawing' + dNum2 + '.xml.rels'
+                  if (!zip.files[drRelPath2]) continue
+                  var drXml2 = await zip.files[drRelPath2].async('string')
+                  var fnames2 = drXml2.match(/\.\.\/media\/([^"<]+)/g) || []
+                  var seen2 = {}
+                  fnames2.forEach(function(fm) {
+                    var fn2 = fm.replace('../media/', '')
+                    if (seen2[fn2]) return
+                    seen2[fn2] = true
+                    var idx2 = mediaNombreAIdx2[fn2]
+                    if (idx2 === undefined) return
+                    var sz2 = mediaFromZip[idx2].buffer.byteLength
+                    if (sz2 >= 100000 && sz2 < 500000) imgsHoja.push({ idx: idx2, sz: sz2 })
+                  })
+                }
+                imgsHoja.sort(function(a,b){ return b.sz - a.sz })
+                for (var vi3 = 0; vi3 < variantesSinImg.length; vi3++) {
+                  var mfVar2 = mediaFromZip[(imgsHoja[vi3] || {}).idx]
+                  if (!mfVar2) continue
+                  var variante3 = variantesSinImg[vi3]
+                  try {
+                    var fnVar2 = 'sucati/var_' + cod + '_v' + vi3 + '_' + Date.now() + '.' + mfVar2.ext
+                    var blVar2 = new Blob([mfVar2.buffer], { type: 'image/' + mfVar2.ext })
+                    var upVar2 = await supabaseClient.storage.from('pedidos-variantes').upload(fnVar2, blVar2, { contentType: 'image/' + mfVar2.ext, upsert: true })
+                    if (!upVar2.error) {
+                      var urlVar2 = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fnVar2)
+                      if (urlVar2.data) variante3.imagen_url = urlVar2.data.publicUrl
                     }
-                  }).catch(function(e) { console.error('Error var img:', e) })
-              })
-              // Esperar todas las promesas
-              promesasVar.forEach(function(p) { if (p) p.catch(function(){}) })
-            })
+                  } catch(e) { console.error('Error var img:', e) }
+                }
+              }
+              for (var ai4 = 0; ai4 < articulosOrden.length; ai4++) {
+                await procesarVariantesHoja(articulosOrden[ai4])
+              }
+            }
 
             // Foto principal: buscar la imagen más grande de la hoja con nombre = código exacto
             // Ej: hoja "2269" → imagen principal de 2269, hoja "Plush bondeado" se ignora para foto principal
