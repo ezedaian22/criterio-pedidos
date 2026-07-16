@@ -657,17 +657,12 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               // Modo estampas: asignar imágenes en orden a cada variante de cada artículo
               // Las imágenes están ordenadas por posición en el ZIP igual al orden de la hoja
               // Cada variante recibe su propia imagen
-              var imgIdx = 0
               articulosOrden.forEach(function(cod) {
                 var art = articulos[cod]
                 var variantesEstampa = art.variantes.filter(function(v) { return v.es_estampa })
                 if (variantesEstampa.length === 0) return
-
-                // Subir imagen por variante de forma síncrona (async en forEach no funciona bien)
-                // Lo marcamos para procesar después
                 art._variantesParaImg = variantesEstampa
-                art._imgIdxStart = imgIdx
-                imgIdx += variantesEstampa.length
+                art._imgIdxStart = 0  // siempre desde 0 — las estampas son compartidas entre artículos
               })
 
               // Procesar uploads de estampas
