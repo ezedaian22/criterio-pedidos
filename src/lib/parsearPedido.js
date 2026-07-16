@@ -548,18 +548,31 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           if (mMod) { artActual = mMod[1]; continue }
 
           if (artActual && articulos[artActual]) {
-            var primerVal = row.find(function(v) { return v !== null && v !== '' })
-            if (!primerVal) { artActual = null; continue }
+            // Bug fix: buscar nombre solo en cols 0-5 para evitar agarrar textos largos de condiciones (col 21+)
+            var primerVal = null
+            for (var ci = 0; ci <= 5; ci++) {
+              if (row[ci] !== null && row[ci] !== undefined && row[ci] !== '') { primerVal = row[ci]; break }
+            }
+            if (!primerVal) continue  // fila sin datos en cols relevantes → no resetear artActual
             var nombre = String(primerVal).trim()
             if (/^\d+$/.test(nombre)) continue
             var ignorar = ['modulo','cantidad','curva','entrega','observ','total','revisar','horario','facturar','proveedor','tel','condic','mail']
             if (!nombre || ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
 
+            // Bug fix: leer cantidad desde col 5 ("XX u" / "XX UNIDADES") — es el campo correcto siempre
+            // Fallback: buscar número en cols 4-12 evitando col 3 donde está el nombre (ej: "VAR 1" → 1)
             var cantVar = 0
-            for (var j = 1; j < row.length; j++) {
-              if (!row[j]) continue
-              var numStr = String(row[j]).replace(/[^0-9]/g, '')
-              if (numStr && parseInt(numStr) > 0) { cantVar = parseInt(numStr); break }
+            var colCant5 = row[5]
+            if (colCant5 !== null && colCant5 !== undefined && colCant5 !== '') {
+              var numStr5 = String(colCant5).replace(/[^0-9]/g, '')
+              if (numStr5 && parseInt(numStr5) > 0) cantVar = parseInt(numStr5)
+            }
+            if (!cantVar) {
+              for (var j = 4; j <= 12; j++) {
+                if (!row[j]) continue
+                var numStr = String(row[j]).replace(/[^0-9]/g, '')
+                if (numStr && parseInt(numStr) > 0) { cantVar = parseInt(numStr); break }
+              }
             }
             if (nombre && cantVar > 0) {
               // Detectar si es estampa (DNS, VTE, estampa, etc.)
