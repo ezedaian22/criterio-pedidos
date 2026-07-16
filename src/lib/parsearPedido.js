@@ -438,7 +438,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         }
 
         if (headerRowIdx === -1 || colCodProv === -1) {
-          reject(new Error('No se encontró encabezado en el XLS')); return
+          throw new Error('No se encontró encabezado en el XLS')
         }
 
         // Leer unidades por módulo de la hoja (buscar "MODULOS X NN UNIDADES")
@@ -543,12 +543,6 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           var row = rows[i]
           if (!row) continue
           var textFila = row.filter(Boolean).map(String).join(' ')
-
-          // DEBUG TEMPORAL
-          var cols05 = row.slice(0, 6).map(function(v){ return v === null || v === undefined ? 'null' : String(v) })
-          if (textFila.includes('2175') || artActual === '2175') {
-            console.log('DEBUG VAR row ' + (i+1) + ' artActual=' + artActual + ' cols0-5:', cols05, ' textFila:', textFila.slice(0,80))
-          }
 
           var mMod = textFila.match(/m[oó]dulo\s+art\s+(\d+)/i)
           if (mMod) { artActual = mMod[1]; continue }
