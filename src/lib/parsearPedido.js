@@ -648,6 +648,12 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             })
 
             if (hojaEstampas && Object.keys(articulos).some(function(c) { return articulos[c].variantes.some(function(v){ return v.es_estampa }) })) {
+              // Modo estampas: imágenes entre 100KB y 950KB son estampas
+              // Imágenes >1MB son fotos del artículo terminado — no las queremos acá
+              var imgsEstampas = mediaIdxs.filter(function(idx) {
+                var sz = mediaFromZip[idx] ? mediaFromZip[idx].buffer.byteLength : 0
+                return sz >= 100000 && sz <= 950000
+              })
               // Modo estampas: asignar imágenes en orden a cada variante de cada artículo
               // Las imágenes están ordenadas por posición en el ZIP igual al orden de la hoja
               // Cada variante recibe su propia imagen
@@ -673,7 +679,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                 for (var vi = 0; vi < art._variantesParaImg.length; vi++) {
                   var variante = art._variantesParaImg[vi]
                   var imgIdxAbs = art._imgIdxStart + vi
-                  var mf = mediaFromZip[imgsGrandes[imgIdxAbs]]
+                  var mf = mediaFromZip[imgsEstampas[imgIdxAbs]]
                   if (!mf) continue
                   try {
                     var fileName = 'sucati/estampa_' + cod + '_v' + vi + '_' + Date.now() + '.' + mf.ext
@@ -686,17 +692,8 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                       if (urlRes.data) {
                         // Asignar esta imagen a la variante específica
                         variante.imagen_url = urlRes.data.publicUrl
-                        // Primera variante también va como imagen del artículo
-                        if (vi === 0) {
-                          art.imagen_url = urlRes.data.publicUrl
-                          // Propagar a todos los artículos del mismo pedido (misma hoja de estampas)
-                          articulosOrden.forEach(function(otroCod) {
-                            if (otroCod !== cod && !articulos[otroCod].imagen_url) {
-                              // Los demás artículos con estampas comparten el mismo orden de imágenes
-                              // sus variantes se procesarán en su propio loop
-                            }
-                          })
-                        }
+                        // NO asignar estampa como foto principal del artículo
+                        // La foto del artículo viene de su hoja específica (2278, 2180, etc.)
                       }
                     }
                   } catch(imgErr) {
@@ -704,40 +701,29 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                   }
                 }
               }
-            } else {
-              // Modo colores: una imagen por artículo (muestrario)
-              var imgsMuestrario = imgsGrandes.filter(function(idx) {
-                return mediaFromZip[idx].buffer.byteLength <= 400000
-              })
-              var imgsAUsar = imgsMuestrario.length > 0 ? imgsMuestrario : imgsGrandes
+            } // fin if hojaEstampas
 
-              for (var hi = 0; hi < hojasConImg.length; hi++) {
-                var hoja = hojasConImg[hi]
-                var cod = hojasCodigo[hoja]
-                if (!cod || subidas[cod]) continue
-                var mf = mediaFromZip[imgsAUsar[hi]] || mediaFromZip[imgsAUsar[0]]
-                if (!mf) continue
-                try {
-                  var fileName = 'sucati/' + cod + '_' + Date.now() + '.' + mf.ext
-                  var blob = new Blob([mf.buffer], { type: 'image/' + mf.ext })
-                  var uploadRes = await supabaseClient.storage
-                    .from('pedidos-variantes')
-                    .upload(fileName, blob, { contentType: 'image/' + mf.ext, upsert: true })
-                  if (!uploadRes.error) {
-                    var urlRes = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
-                    if (urlRes.data) {
-                      var imgUrl = urlRes.data.publicUrl
-                      articulos[cod].imagen_url = imgUrl
-                      articulos[cod].variantes.forEach(function(vr) {
-                        if (!vr.imagen_url) vr.imagen_url = imgUrl
-                      })
-                      subidas[cod] = true
-                    }
-                  }
-                } catch(imgErr) {
-                  console.error('Error subiendo img art', cod, ':', imgErr)
+            // Foto principal del artículo: imagen >1MB de la hoja con el código del artículo
+            var imgsArticulo = mediaIdxs.filter(function(idx) {
+              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 1000000
+            })
+            for (var hi2 = 0; hi2 < hojasConImg.length; hi2++) {
+              var hoja2 = hojasConImg[hi2]
+              var cod2 = hojasCodigo[hoja2]
+              if (!cod2 || articulos[cod2].imagen_url) continue
+              // Solo hojas con código de artículo (no Modal Est)
+              if (hoja2.toLowerCase().includes('modal') || hoja2.toLowerCase().includes('estampa')) continue
+              var mfArt = mediaFromZip[imgsArticulo[hi2]] || mediaFromZip[imgsArticulo[0]]
+              if (!mfArt) continue
+              try {
+                var fileNameArt = 'sucati/art_' + cod2 + '_' + Date.now() + '.' + mfArt.ext
+                var blobArt = new Blob([mfArt.buffer], { type: 'image/' + mfArt.ext })
+                var upArt = await supabaseClient.storage.from('pedidos-variantes').upload(fileNameArt, blobArt, { contentType: 'image/' + mfArt.ext, upsert: true })
+                if (!upArt.error) {
+                  var urlArt = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileNameArt)
+                  if (urlArt.data) articulos[cod2].imagen_url = urlArt.data.publicUrl
                 }
-              }
+              } catch(e) { console.error('Error foto artículo:', e) }
             }
           } catch(e) {
             console.error('Error imágenes:', e)
@@ -869,6 +855,8 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
           razon_social: sucatiData.razonSocial,
           articulos: sucatiData.articulos
         }
+      } else {
+        throw new Error('No se encontraron artículos en el archivo. Verificá que sea un pedido de Sucati válido.')
       }
     } catch(e) {
       throw new Error('Error leyendo XLS de Sucati: ' + e.message)
