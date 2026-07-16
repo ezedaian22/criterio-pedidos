@@ -560,6 +560,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             if (!nombre || ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
 
             // Leer cantidad desde col 5 ("6 u", "20 UNIDADES") — evita leer el número del nombre ("VAR 1" → 1)
+            if (nombre && /^VAR\s/i.test(nombre)) console.log('VAR DEBUG nombre=', nombre, 'col5=', JSON.stringify(row[5]), 'col4=', JSON.stringify(row[4]), 'col6=', JSON.stringify(row[6]))
             var cantVar = 0
             var colCant5 = row[5]
             if (colCant5 !== null && colCant5 !== undefined && colCant5 !== '') {
