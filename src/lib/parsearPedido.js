@@ -136,6 +136,7 @@ function parsearDistribucionGR(items) {
       itemsNorm.push(i)
     }
   })
+  // Mostrar los items que tienen guión para ver el formato exacto
   items = itemsNorm
 
   // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
