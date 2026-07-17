@@ -92,27 +92,19 @@ function parsearNotaPedidoGR(items) {
           descripcion_cliente: descripcion,
           precio_unitario: precio,
           talles_articulo: [],
-          sucursales: {},  // una sucursal por talle: "T4", "T6", etc.
+          sucursales: { talles: { nro_sucursal: 'talles', cantidad: 0, talles: {}, es_por_talle: true } },
           total_unidades: 0,
           modulos: [],
-          variantes: [],
-          es_por_talle: true
+          variantes: []
         }
         articulosOrden.push(codNuestro)
       }
 
       var art = articulosMap[codNuestro]
-      var sucKey = 'T' + talle  // "T4", "T6", etc.
-      if (art.sucursales[sucKey]) return  // talle ya procesado
+      if (art.sucursales.talles.talles[talle]) return
       if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
-      // Cada talle es una "sucursal" con su propio estado (reusa lógica de SucursalesGrid)
-      art.sucursales[sucKey] = {
-        nro_sucursal: sucKey,
-        cantidad: cantidad,
-        estado: 'pendiente',
-        talles: {},
-        es_por_talle: true
-      }
+      art.sucursales.talles.talles[talle] = cantidad
+      art.sucursales.talles.cantidad += cantidad
       art.total_unidades += cantidad
     })
   })
@@ -122,10 +114,7 @@ function parsearNotaPedidoGR(items) {
   var resultado = articulosOrden.map(function(cod) {
     var art = articulosMap[cod]
     art.talles_articulo.sort(function(a,b){ return Number(a)-Number(b) })
-    // Ordenar sucursales por número de talle
-    art.sucursales = Object.values(art.sucursales).sort(function(a,b){
-      return Number(a.nro_sucursal.replace('T','')) - Number(b.nro_sucursal.replace('T',''))
-    })
+    art.sucursales = Object.values(art.sucursales)
     return art
   })
 
@@ -979,9 +968,11 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   if (esGR && items) {
     // Primero intentar distribución por sucursal
     var articulosGR = parsearDistribucionGR(items)
+    console.log('GR DEBUG: parsearDistribucionGR devolvió', articulosGR ? articulosGR.length + ' artículos' : 'null', articulosGR ? articulosGR.map(function(a){ return a.codigo_nuestro + '(' + (a.sucursales ? a.sucursales.length : 0) + ' sucs)' }) : '')
     // Si no hay distribución, intentar por talle
     if (!articulosGR || articulosGR.length === 0) {
       articulosGR = parsearNotaPedidoGR(items)
+      console.log('GR DEBUG: cayó a parsearNotaPedidoGR →', articulosGR ? articulosGR.length + ' artículos' : 'null')
     }
     if (articulosGR && articulosGR.length > 0) {
       var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
