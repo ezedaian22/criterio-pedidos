@@ -33,6 +33,139 @@ async function extraerItemsPDF(base64) {
   } catch(e) { return null }
 }
 
+function parsearNotaPedidoGR(items) {
+  // Parser para pedidos GR SIN hoja de distribución
+  // items = lista plana de PDF.js con items de TODAS las páginas en orden
+  // Dos páginas pueden tener items con el mismo Y — procesamos secuencialmente hacia atrás
+  // para cada cantidad encontrada, buscando el código/talle/desc que la precede en el array
+
+  var xCodProv = 75, xArt = 135, xTalle = 188, xCant = 415, xDesc1 = 195, xDesc2 = 400, xPrecio = 464
+  var TOL_Y = 4, TOL_X = 20
+
+  var articulosMap = {}
+  var articulosOrden = []
+  var procesados = {}  // "codNuestro_talle" → true
+
+  for (var idx = 0; idx < items.length; idx++) {
+    var cantItem = items[idx]
+    // Solo procesar cantidades en x~415
+    if (!/^\d+$/.test(cantItem.text)) continue
+    if (Math.abs(cantItem.x - xCant) > TOL_X) continue
+    var cantidad = parseInt(cantItem.text)
+    if (!cantidad || cantidad <= 0 || cantidad > 9999 || cantidad === 60) continue
+
+    var yFila = cantItem.y
+
+    // Buscar código nuestro hacia ATRÁS en el array (misma Y)
+    var codNuestroItem = null
+    for (var i = idx - 1; i >= 0; i--) {
+      var item = items[i]
+      if (Math.abs(item.y - yFila) > TOL_Y) continue
+      if (/^\d{1,4}$/.test(item.text) && Math.abs(item.x - xCodProv) <= TOL_X) {
+        codNuestroItem = item; break
+      }
+    }
+    if (!codNuestroItem) continue
+    var codNuestro = codNuestroItem.text
+
+    // Talle — buscar hacia atrás
+    var talleItem = null
+    for (var i = idx - 1; i >= 0; i--) {
+      var item = items[i]
+      if (Math.abs(item.y - yFila) > TOL_Y) continue
+      if (/^\d{1,2}$/.test(item.text) && Math.abs(item.x - xTalle) <= TOL_X) {
+        talleItem = item; break
+      }
+    }
+    if (!talleItem) continue
+    var talle = String(parseInt(talleItem.text))
+
+    // Evitar duplicados
+    var key = codNuestro + '_' + talle
+    if (procesados[key]) continue
+    procesados[key] = true
+
+    // Código cliente — buscar hacia atrás
+    var codClienteItem = null
+    for (var i = idx - 1; i >= 0; i--) {
+      var item = items[i]
+      if (Math.abs(item.y - yFila) > TOL_Y) continue
+      if (/^\d{5}$/.test(item.text) && Math.abs(item.x - xArt) <= TOL_X) {
+        codClienteItem = item; break
+      }
+    }
+    if (!codClienteItem) continue
+    var codCliente = codClienteItem.text
+
+    // Descripción — items antes de cantItem en la misma Y, entre xDesc1 y xDesc2
+    var descItems = []
+    for (var i = idx - 1; i >= 0; i--) {
+      var item = items[i]
+      if (Math.abs(item.y - yFila) > TOL_Y) break
+      if (/[A-Za-záéíóúÁÉÍÓÚñÑ/]/.test(item.text) && item.x >= xDesc1 && item.x <= xDesc2) {
+        descItems.unshift(item)  // insertar al inicio para mantener orden izquierda→derecha
+      }
+    }
+    // Dedup por X (misma X = misma columna, distintas páginas)
+    var seenX = {}
+    var dedupDesc = []
+    descItems.forEach(function(di) {
+      var xk = Math.round(di.x / 5) * 5
+      if (!seenX[xk]) { seenX[xk] = true; dedupDesc.push(di.text) }
+    })
+    var descripcion = dedupDesc.join(' ')
+
+    // Precio — buscar hacia adelante en la misma Y
+    var precio = 0
+    for (var i = idx + 1; i < items.length; i++) {
+      var item = items[i]
+      if (Math.abs(item.y - yFila) > TOL_Y) break
+      if (item.x >= xPrecio - 15 && item.x <= xPrecio + 20 && /[\d.,]+/.test(item.text)) {
+        try { precio = Math.round(parseFloat(item.text.replace(/\./g,'').replace(',','.'))) } catch(e) {}
+        break
+      }
+    }
+
+    if (!articulosMap[codNuestro]) {
+      articulosMap[codNuestro] = {
+        codigo_nuestro: codNuestro,
+        codigo_cliente: codCliente,
+        descripcion_cliente: descripcion,
+        precio_unitario: precio,
+        talles_articulo: [],
+        sucursales: {},
+        total_unidades: 0,
+        modulos: [],
+        variantes: []
+      }
+      articulosOrden.push(codNuestro)
+    }
+
+    var art = articulosMap[codNuestro]
+    if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
+
+    // Sucursal especial "talles" — indica que este pedido va por talle, no por sucursal
+    if (!art.sucursales['talles']) {
+      art.sucursales['talles'] = { nro_sucursal: 'talles', cantidad: 0, talles: {}, es_por_talle: true }
+    }
+    art.sucursales['talles'].talles[talle] = cantidad
+    art.sucursales['talles'].cantidad += cantidad
+    art.total_unidades += cantidad
+  }
+
+  if (Object.keys(articulosMap).length === 0) return null
+
+  var resultado = articulosOrden.map(function(cod) {
+    var art = articulosMap[cod]
+    art.talles_articulo.sort(function(a,b){ return Number(a)-Number(b) })
+    art.sucursales = Object.values(art.sucursales)
+    return art
+  })
+
+  return resultado.length > 0 ? resultado : null
+}
+
+
 function parsearDistribucionGR(items) {
   // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
   var codigosItems = items.filter(function(i) {
@@ -984,6 +1117,7 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   }
 
   if (esGR && items) {
+    // Intentar parser con distribución por sucursal
     var articulosGR = parsearDistribucionGR(items)
     if (articulosGR && articulosGR.length > 0) {
       var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
@@ -993,6 +1127,18 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
         fecha_pedido: meta.fecha_pedido,
         fecha_entrega: meta.fecha_entrega,
         articulos: articulosGR
+      }
+    }
+    // Fallback: pedido sin distribución — leer nota de pedido por talle
+    var articulosGRTalle = parsearNotaPedidoGR(items)
+    if (articulosGRTalle && articulosGRTalle.length > 0) {
+      var metaT = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
+      return {
+        cliente_detectado: 'Garcia Reguera',
+        numero_pedido: metaT.numero_pedido,
+        fecha_pedido: metaT.fecha_pedido,
+        fecha_entrega: metaT.fecha_entrega,
+        articulos: articulosGRTalle
       }
     }
   }
