@@ -157,45 +157,75 @@ function parsearDistribucionGR(items) {
   }
   if (codigosTalle.length === 0) return null
 
-  // Detectar la COLUMNA de sucursales: los números de 2 dígitos que comparten X (columna vertical).
-  // Agrupar por X y quedarse con el grupo que tenga más números de 2 dígitos.
-  var dosDig = items.filter(function(i) { return /^\d{2}$/.test(i.text) })
-  var porX = {}
-  dosDig.forEach(function(i) {
-    var xk = Math.round(i.x / 8) * 8
-    if (!porX[xk]) porX[xk] = []
-    porX[xk].push(i)
+  // Detectar la COLUMNA de sucursales de forma robusta.
+  // Las sucursales son números de 2 dígitos alineados verticalmente (X similar).
+  // Agrupamos por X con tolerancia real (no redondeo fijo) y tomamos el grupo más grande.
+  var dosDig = items.filter(function(i) { return /^\d{2}$/.test(i.text) && i.page === codigosTalle[0].page })
+  dosDig.sort(function(a,b){ return a.x - b.x })
+  // Agrupar en columnas: items cuyo X difiere < 10px forman la misma columna
+  var columnas = []
+  dosDig.forEach(function(it) {
+    var col = null
+    for (var k = 0; k < columnas.length; k++) {
+      if (Math.abs(columnas[k].xProm - it.x) < 10) { col = columnas[k]; break }
+    }
+    if (!col) { col = { xProm: it.x, items: [] }; columnas.push(col) }
+    col.items.push(it)
+    // recalcular X promedio
+    col.xProm = col.items.reduce(function(s,i){ return s+i.x }, 0) / col.items.length
   })
-  var colSucs = []
-  Object.keys(porX).forEach(function(xk) {
-    if (porX[xk].length > colSucs.length) colSucs = porX[xk]
-  })
+  // La columna de sucursales es la que tiene MÁS items (la lista vertical de sucursales)
+  var colSucsObj = columnas.reduce(function(mejor, c){ return c.items.length > (mejor ? mejor.items.length : 0) ? c : mejor }, null)
+  var colSucs = colSucsObj ? colSucsObj.items : []
   if (colSucs.length < 5) return null
 
-  // Mapa Y → nro_sucursal (cada sucursal está en un Y distinto en la columna)
+  // Mapa: cada sucursal en su Y, ordenadas por Y ascendente
   var sucPorY = colSucs.map(function(i) { return { y: i.y, suc: i.text } }).sort(function(a,b){ return a.y - b.y })
+  var pasoY = sucPorY.length > 1 ? Math.abs(sucPorY[1].y - sucPorY[0].y) : 36
+  var tolY = Math.max(8, pasoY * 0.6)
 
-  // Para cada código-talle, leer las cantidades en su MISMA X (columna del artículo).
-  // Cada cantidad se alinea por Y con la sucursal correspondiente.
+  // Las columnas de código-talle están muy juntas (~14px). Para evitar que una columna
+  // agarre cantidades de la vecina, calculamos el paso X entre columnas y usamos la mitad
+  // como tolerancia, asignando cada número a la columna de código MÁS CERCANA.
+  var xsCodigos = codigosTalle.map(function(c){ return c.x }).sort(function(a,b){ return a-b })
+  var pasoX = 999
+  for (var xi = 1; xi < xsCodigos.length; xi++) {
+    var dx = xsCodigos[xi] - xsCodigos[xi-1]
+    if (dx > 2 && dx < pasoX) pasoX = dx
+  }
+  if (pasoX === 999) pasoX = 14
+  var tolX = Math.max(4, Math.floor(pasoX / 2))
+
   var articulos = {}
   var ordenArt = []
 
+  // Precalcular todos los números candidatos (cantidades) de la zona de distribución
+  var pageDist = codigosTalle[0].page
+  var todosNums = items.filter(function(i) {
+    return /^\d{1,4}$/.test(i.text) && i.page === pageDist
+  })
+
   codigosTalle.forEach(function(ct) {
-    // Números en la misma X que este código-talle (tolerancia ±6px), que no sean el código mismo
     var colX = ct.x
-    var numsColumna = items.filter(function(i) {
-      return /^\d{1,4}$/.test(i.text) &&
-             Math.abs(i.x - colX) <= 6 &&
-             i.page === ct.page &&
-             !(Math.abs(i.y - ct.y) <= 6)  // excluir la fila del código
+    var codNuestro = ct.codNuestro
+
+    // Números que pertenecen a ESTA columna: su X más cercana es la de este código-talle
+    var numsColumna = todosNums.filter(function(num) {
+      if (Math.abs(num.y - ct.y) <= 6) return false  // excluir fila del código
+      if (Math.abs(num.x - colX) > tolX) return false  // debe estar dentro de tolX
+      // verificar que ESTE código es el más cercano en X (no una columna vecina)
+      var miDost = Math.abs(num.x - colX)
+      var hayMasCercano = codigosTalle.some(function(otro) {
+        return otro !== ct && Math.abs(num.x - otro.x) < miDost
+      })
+      return !hayMasCercano
     })
 
-    // Descripción: textos con letras en la misma X
+    // Descripción
     var desc = items.filter(function(i) {
-      return /[A-Za-z]/.test(i.text) && Math.abs(i.x - colX) <= 8 && i.page === ct.page
+      return /[A-Za-z]/.test(i.text) && Math.abs(i.x - colX) <= tolX && i.page === ct.page
     }).sort(function(a,b){ return a.y - b.y }).map(function(i){ return i.text }).join(' ')
 
-    var codNuestro = ct.codNuestro
     if (!articulos[codNuestro]) {
       articulos[codNuestro] = {
         codigo_nuestro: codNuestro,
@@ -212,16 +242,13 @@ function parsearDistribucionGR(items) {
     var art = articulos[codNuestro]
     if (art.talles_articulo.indexOf(ct.talle) === -1) art.talles_articulo.push(ct.talle)
 
-    // Alinear cada cantidad por Y con la sucursal más cercana. Ignorar el TOTAL.
     numsColumna.forEach(function(num) {
-      // Buscar la sucursal con Y más cercano
       var mejor = null, mejorDist = 999
       sucPorY.forEach(function(s) {
         var d = Math.abs(s.y - num.y)
         if (d < mejorDist) { mejorDist = d; mejor = s }
       })
-      // Si la sucursal más cercana es "TOTAL", o no hay match cercano, ignorar
-      if (!mejor || mejorDist > 12 || mejor.suc === 'TOTAL') return
+      if (!mejor || mejorDist > tolY || mejor.suc === 'TOTAL') return
       var cant = parseInt(num.text)
       if (cant <= 0) return
       if (!art.sucursales[mejor.suc]) {
@@ -927,6 +954,7 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   if (esPDF) {
     items = await extraerItemsPDF(base64)
     if (items) textoPDF = items.map(function(i) { return i.text }).join(' ')
+    try { if (typeof window !== 'undefined') window._itemsReales = items } catch(e) {}
   }
 
   // Detectar si es GR por texto
