@@ -923,34 +923,3 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargan
     </div>
   )
 }
-) {
-  if (!sucursal || !sucursal.talles) return null
-  const talles = sucursal.talles
-  const tallesOrdenados = Object.keys(talles).sort(function(a,b){ return Number(a)-Number(b) })
-  const total = Object.values(talles).reduce(function(s,c){ return s+c }, 0)
-
-  return (
-    <div>
-      <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>
-        Distribución por talle
-      </h2>
-      <div style={{ background: '#1a1d27', border: '1px solid #2a2d3e', borderRadius: '0.75rem', padding: '1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(5rem, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          {tallesOrdenados.map(function(t) {
-            return (
-              <div key={t} style={{ background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.5rem', padding: '0.625rem 0.375rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 600, marginBottom: '0.2rem' }}>TALLE</div>
-                <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.25rem', color: '#6b8fff' }}>{t}</div>
-                <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1rem', color: 'white' }}>{talles[t]}u</div>
-              </div>
-            )
-          })}
-        </div>
-        <div style={{ borderTop: '1px solid #2a2d3e', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Total</span>
-          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.1rem', color: 'white' }}>{total}u</span>
-        </div>
-      </div>
-    </div>
-  )
-}
