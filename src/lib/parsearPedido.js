@@ -153,41 +153,36 @@ function parsearDistribucionGR(items) {
   })
   if (codigosItems.length === 0) return null
 
-  // El Y de los codigos nos da las filas de distribucion
-  var ysFilas = codigosItems.map(function(i) { return i.y })
-  var yMin = Math.min.apply(null, ysFilas)
-  var yMax = Math.max.apply(null, ysFilas)
-
-  // Buscar fila de encabezado de sucursales (números de 2 dígitos) — robusto a orientación Y.
-  // El encabezado está inmediatamente fuera del rango de los códigos (arriba o abajo según orientación).
-  // Buscamos en AMBAS direcciones y nos quedamos con el grupo (misma Y) que tenga más números.
-  function buscarEncabezado(candidatos) {
-    var porYlocal = {}
-    candidatos.forEach(function(i) {
-      var y = Math.round(i.y / 4) * 4
-      if (!porYlocal[y]) porYlocal[y] = []
-      porYlocal[y].push(i)
-    })
-    var mejor = []
-    Object.keys(porYlocal).forEach(function(y) {
-      if (porYlocal[y].length > mejor.length) mejor = porYlocal[y]
-    })
-    return mejor
-  }
-
-  // Candidatos arriba (y > yMax) y abajo (y < yMin), dentro de 60px del borde del rango
-  var candArriba = items.filter(function(i) {
-    return /^\d{2}$/.test(i.text) && i.y > yMax && i.y < yMax + 60
+  // Detección del encabezado de sucursales — INDEPENDIENTE de la orientación de Y.
+  // El encabezado es la fila (grupo con misma Y) que tiene MÁS números de 2 dígitos
+  // en posiciones de columna de distribución (x > 350). Los números de sucursal (01,04,06...)
+  // están todos alineados en una sola fila; ninguna otra fila del PDF tiene tantos números
+  // de 2 dígitos juntos en esas X.
+  var candidatosEnc = items.filter(function(i) {
+    return /^\d{2}$/.test(i.text) && i.x > 350
   })
-  var candAbajo = items.filter(function(i) {
-    return /^\d{2}$/.test(i.text) && i.y < yMin && i.y > yMin - 60
+  // Agrupar por Y (redondeada) y quedarse con el grupo más grande
+  var gruposPorY = {}
+  candidatosEnc.forEach(function(i) {
+    var y = Math.round(i.y / 4) * 4
+    if (!gruposPorY[y]) gruposPorY[y] = []
+    gruposPorY[y].push(i)
+  })
+  var encItems = []
+  Object.keys(gruposPorY).forEach(function(y) {
+    // Deduplicar por X dentro del grupo (dos páginas pueden solapar)
+    var grupo = gruposPorY[y]
+    var xVistas = {}
+    var unicos = []
+    grupo.sort(function(a,b){ return a.x - b.x }).forEach(function(it) {
+      var xk = Math.round(it.x / 10) * 10
+      if (!xVistas[xk]) { xVistas[xk] = true; unicos.push(it) }
+    })
+    if (unicos.length > encItems.length) encItems = unicos
   })
 
-  var encArriba = buscarEncabezado(candArriba)
-  var encAbajo = buscarEncabezado(candAbajo)
-
-  // Elegir el grupo con más sucursales (el encabezado real tiene 5+ sucursales)
-  var encItems = encArriba.length >= encAbajo.length ? encArriba : encAbajo
+  // El encabezado real tiene al menos 5 sucursales
+  if (encItems.length < 5) return null
 
   // Ordenar encabezado por X
   encItems = encItems.sort(function(a, b) { return a.x - b.x })
