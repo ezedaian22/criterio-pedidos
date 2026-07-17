@@ -35,12 +35,11 @@ async function extraerItemsPDF(base64) {
 }
 
 function parsearNotaPedidoGR(items) {
-  // Parser GR sin distribución — procesa CADA PÁGINA por separado para evitar mezclas
-  // Cada página tiene exactamente UN artículo por fila
+  // Parser GR sin distribución — procesa CADA PÁGINA por separado
   var xCodProv = 75, xArt = 135, xTalle = 188, xCant = 415, xDesc1 = 195, xDesc2 = 400, xPrecio = 464
   var TOL_X = 20
 
-  // Agrupar items por página
+  // Agrupar por página
   var porPagina = {}
   items.forEach(function(item) {
     var pg = item.page || 1
@@ -51,11 +50,8 @@ function parsearNotaPedidoGR(items) {
   var articulosMap = {}
   var articulosOrden = []
 
-  // Procesar cada página por separado
   Object.keys(porPagina).forEach(function(pg) {
     var pageItems = porPagina[pg]
-
-    // Agrupar por Y dentro de esta página
     var porY = {}
     pageItems.forEach(function(item) {
       var yKey = Math.round(item.y / 4) * 4
@@ -66,7 +62,6 @@ function parsearNotaPedidoGR(items) {
     Object.keys(porY).forEach(function(yKey) {
       var fila = porY[yKey].slice().sort(function(a,b){ return a.x - b.x })
 
-      // Dentro de una página, solo 1 artículo por fila
       var codItems = fila.filter(function(i){ return /^\d{1,4}$/.test(i.text) && Math.abs(i.x - xCodProv) <= TOL_X })
       var talleItems = fila.filter(function(i){ return /^\d{1,2}$/.test(i.text) && Math.abs(i.x - xTalle) <= TOL_X })
       var cantItems = fila.filter(function(i){
@@ -87,8 +82,6 @@ function parsearNotaPedidoGR(items) {
       if (precioItems.length) {
         try { precio = Math.round(parseFloat(precioItems[0].text.replace(/\./g,'').replace(',','.'))) } catch(e) {}
       }
-
-      // Descripción
       var descItems = fila.filter(function(i){ return /[A-Za-záéíóúÁÉÍÓÚñÑ/]/.test(i.text) && i.x >= xDesc1 && i.x <= xDesc2 })
       var descripcion = descItems.map(function(i){ return i.text }).join(' ')
 
@@ -108,7 +101,7 @@ function parsearNotaPedidoGR(items) {
       }
 
       var art = articulosMap[codNuestro]
-      if (art.sucursales.talles.talles[talle]) return  // talle ya procesado
+      if (art.sucursales.talles.talles[talle]) return
       if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
       art.sucursales.talles.talles[talle] = cantidad
       art.sucursales.talles.cantidad += cantidad
@@ -127,7 +120,6 @@ function parsearNotaPedidoGR(items) {
 
   return resultado.length > 0 ? resultado : null
 }
-
 
 function parsearDistribucionGR(items) {
   // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
@@ -638,36 +630,24 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         for (var i = headerRowIdx + 1; i < rows.length; i++) {
           var row = rows[i]
           if (!row) continue
-          var textFila = row.filter(function(v){ return v !== null && v !== undefined && v !== '' }).map(String).join(' ')
+          var textFila = row.filter(Boolean).map(String).join(' ')
 
           var mMod = textFila.match(/m[oó]dulo\s+art\s+(\d+)/i)
           if (mMod) { artActual = mMod[1]; continue }
 
           if (artActual && articulos[artActual]) {
-            // Buscar nombre solo en cols 0-5 (evita agarrar textos largos de col 21+)
-            var primerVal = null
-            for (var ci = 0; ci <= 5; ci++) {
-              if (row[ci] !== null && row[ci] !== undefined && row[ci] !== '') { primerVal = row[ci]; break }
-            }
-            if (!primerVal) continue  // fila vacía en cols 0-5 → no resetear artActual
+            var primerVal = row.find(function(v) { return v !== null && v !== '' })
+            if (!primerVal) { artActual = null; continue }
             var nombre = String(primerVal).trim()
             if (/^\d+$/.test(nombre)) continue
             var ignorar = ['modulo','cantidad','curva','entrega','observ','total','revisar','horario','facturar','proveedor','tel','condic','mail']
             if (!nombre || ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
 
-            // Leer cantidad desde col 5 ("6 u", "20 UNIDADES") — evita leer el número del nombre ("VAR 1" → 1)
             var cantVar = 0
-            var colCant5 = row[5]
-            if (colCant5 !== null && colCant5 !== undefined && colCant5 !== '') {
-              var numStr5 = String(colCant5).replace(/[^0-9]/g, '')
-              if (numStr5 && parseInt(numStr5) > 0) cantVar = parseInt(numStr5)
-            }
-            if (!cantVar) {
-              for (var j = 4; j <= 12; j++) {
-                if (!row[j]) continue
-                var numStr = String(row[j]).replace(/[^0-9]/g, '')
-                if (numStr && parseInt(numStr) > 0) { cantVar = parseInt(numStr); break }
-              }
+            for (var j = 1; j < row.length; j++) {
+              if (!row[j]) continue
+              var numStr = String(row[j]).replace(/[^0-9]/g, '')
+              if (numStr && parseInt(numStr) > 0) { cantVar = parseInt(numStr); break }
             }
             if (nombre && cantVar > 0) {
               // Detectar si es estampa (DNS, VTE, estampa, etc.)
@@ -806,119 +786,25 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               }
             } // fin if hojaEstampas
 
-            // Variantes con imágenes: leer drawings XML del zip para mapear hoja → imágenes exactas
-            // Construir mapa: nombre archivo imagen → índice en mediaFromZip
-            if (zip) {
-              var mediaNombreAIdx2 = {}
-              mediaIdxs.forEach(function(idx) {
-                var mf = mediaFromZip[idx]
-                if (!mf) return
-                var fname = mf.path.split('/').pop()
-                mediaNombreAIdx2[fname] = idx
-              })
-
-              // Para cada artículo con variantes sin imagen, buscar su hoja de material
-              // y leer las imágenes medianas (100KB-500KB) de esa hoja en orden desc tamaño
-              var procesarVariantesHoja = async function(cod) {
-                var art = articulos[cod]
-                // Solo asignar imágenes a variantes que NO son colores lisos (Jet Black, Chocolate, etc.)
-              // Las variantes con foto en Excel son diseños de tela (VAR 1, VAR 2) o estampas
-              var variantesSinImg = art.variantes.filter(function(v) { return !v.imagen_url && !v.es_estampa && /^var\s/i.test(v.nombre) })
-                if (variantesSinImg.length === 0) return
-                // Hoja de material = hoja que mapea a este código y no es la hoja de código exacto
-                var hojasMat = wb.SheetNames.filter(function(s) {
-                  if (s === cod || s.toLowerCase().includes('nota de pedido') || s.toLowerCase().includes('modal')) return false
-                  return hojasCodigo[s] === cod
-                })
-                if (hojasMat.length === 0) return
-                var hojaMat = hojasMat[0]
-                var shIdx = wb.SheetNames.indexOf(hojaMat) + 1
-                var shRelPath2 = 'xl/worksheets/_rels/sheet' + shIdx + '.xml.rels'
-                if (!zip.files[shRelPath2]) return
-                var shRelXml2 = await zip.files[shRelPath2].async('string')
-                var drawNums2 = shRelXml2.match(/drawing(\d+)\.xml/g) || []
-                var imgsHoja = []
-                for (var di2 = 0; di2 < drawNums2.length; di2++) {
-                  var dNum2 = drawNums2[di2].match(/\d+/)[0]
-                  var drRelPath2 = 'xl/drawings/_rels/drawing' + dNum2 + '.xml.rels'
-                  if (!zip.files[drRelPath2]) continue
-                  var drXml2 = await zip.files[drRelPath2].async('string')
-                  var fnames2 = drXml2.match(/\.\.\/media\/([^"<]+)/g) || []
-                  var seen2 = {}
-                  fnames2.forEach(function(fm) {
-                    var fn2 = fm.replace('../media/', '')
-                    if (seen2[fn2]) return
-                    seen2[fn2] = true
-                    var idx2 = mediaNombreAIdx2[fn2]
-                    if (idx2 === undefined) return
-                    var sz2 = mediaFromZip[idx2].buffer.byteLength
-                    if (sz2 >= 100000 && sz2 < 500000) imgsHoja.push({ idx: idx2, sz: sz2 })
-                  })
-                }
-                imgsHoja.sort(function(a,b){ return b.sz - a.sz })
-                for (var vi3 = 0; vi3 < variantesSinImg.length; vi3++) {
-                  var mfVar2 = mediaFromZip[(imgsHoja[vi3] || {}).idx]
-                  if (!mfVar2) continue
-                  var variante3 = variantesSinImg[vi3]
-                  try {
-                    var fnVar2 = 'sucati/var_' + cod + '_v' + vi3 + '_' + Date.now() + '.' + mfVar2.ext
-                    var blVar2 = new Blob([mfVar2.buffer], { type: 'image/' + mfVar2.ext })
-                    var upVar2 = await supabaseClient.storage.from('pedidos-variantes').upload(fnVar2, blVar2, { contentType: 'image/' + mfVar2.ext, upsert: true })
-                    if (!upVar2.error) {
-                      var urlVar2 = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fnVar2)
-                      if (urlVar2.data) variante3.imagen_url = urlVar2.data.publicUrl
-                    }
-                  } catch(e) { console.error('Error var img:', e) }
-                }
-              }
-              for (var ai4 = 0; ai4 < articulosOrden.length; ai4++) {
-                await procesarVariantesHoja(articulosOrden[ai4])
-              }
-            }
-
-            // Foto principal: buscar la imagen más grande de la hoja con nombre = código exacto
-            // Ej: hoja "2269" → imagen principal de 2269, hoja "Plush bondeado" se ignora para foto principal
-            for (var ai3 = 0; ai3 < articulosOrden.length; ai3++) {
-              var cod3 = articulosOrden[ai3]
-              if (articulos[cod3].imagen_url) continue
-              // Buscar hoja cuyo nombre ES el código exacto
-              var hojaExacta = wb.SheetNames.find(function(s) { return s.trim() === cod3 })
-              if (!hojaExacta) continue
-              // Encontrar la imagen más grande de esa hoja via mediaFromZip
-              // mediaFromZip tiene path = "xl/media/imageN.png"
-              // Necesitamos saber qué imágenes pertenecen a esa hoja
-              // Como no tenemos zip acá, usamos el índice: las imágenes están ordenadas
-              // y la hoja con código exacto siempre tiene la foto del artículo (>100KB)
-              // Buscar en mediaFromZip la imagen más grande no usada aún
-              var mejorIdx = null
-              var mejorSize = 0
-              mediaIdxs.forEach(function(idx) {
-                var mf = mediaFromZip[idx]
-                if (!mf) return
-                var sz = mf.buffer.byteLength
-                if (sz > mejorSize) {
-                  // Verificar que este path corresponde a la hoja correcta
-                  // El nombre del archivo sigue el orden de aparición en el ZIP
-                  // Las hojas con código (2249, 2269, 2175) tienen las imágenes más grandes
-                  mejorSize = sz
-                  mejorIdx = idx
-                }
-              })
-              // Estrategia simple: ordenar hojas de código por posición y asignar imágenes grandes en orden
-              // Las imágenes grandes (>500KB) corresponden exactamente a las hojas de código
-              var imgsGrandesOrdenadas = mediaIdxs.filter(function(idx) {
-                return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 500000
-              })
-              var posEnOrden = articulosOrden.indexOf(cod3)
-              var mfArt = mediaFromZip[imgsGrandesOrdenadas[posEnOrden]]
+            // Foto principal del artículo: imagen >1MB de la hoja con el código del artículo
+            var imgsArticulo = mediaIdxs.filter(function(idx) {
+              return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength > 1000000
+            })
+            for (var hi2 = 0; hi2 < hojasConImg.length; hi2++) {
+              var hoja2 = hojasConImg[hi2]
+              var cod2 = hojasCodigo[hoja2]
+              if (!cod2 || articulos[cod2].imagen_url) continue
+              // Solo hojas con código de artículo (no Modal Est)
+              if (hoja2.toLowerCase().includes('modal') || hoja2.toLowerCase().includes('estampa')) continue
+              var mfArt = mediaFromZip[imgsArticulo[hi2]] || mediaFromZip[imgsArticulo[0]]
               if (!mfArt) continue
               try {
-                var fileNameArt = 'sucati/art_' + cod3 + '_' + Date.now() + '.' + mfArt.ext
+                var fileNameArt = 'sucati/art_' + cod2 + '_' + Date.now() + '.' + mfArt.ext
                 var blobArt = new Blob([mfArt.buffer], { type: 'image/' + mfArt.ext })
                 var upArt = await supabaseClient.storage.from('pedidos-variantes').upload(fileNameArt, blobArt, { contentType: 'image/' + mfArt.ext, upsert: true })
                 if (!upArt.error) {
                   var urlArt = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileNameArt)
-                  if (urlArt.data) articulos[cod3].imagen_url = urlArt.data.publicUrl
+                  if (urlArt.data) articulos[cod2].imagen_url = urlArt.data.publicUrl
                 }
               } catch(e) { console.error('Error foto artículo:', e) }
             }
@@ -1080,26 +966,12 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   }
 
   if (esGR && items) {
-    // Detectar si el PDF tiene hoja de distribución por sucursal
-    var tieneDistribucion = textoPDF && textoPDF.toLowerCase().includes('distribuc')
-    
-    var articulosGR = null
-    if (tieneDistribucion) {
-      // Pedido CON distribución por sucursal → usar parser de distribución
-      articulosGR = parsearDistribucionGR(items)
-    }
-    
+    // Primero intentar distribución por sucursal
+    var articulosGR = parsearDistribucionGR(items)
+    // Si no hay distribución, intentar por talle
     if (!articulosGR || articulosGR.length === 0) {
-      // Sin distribución (o falló) → leer nota de pedido por talle
-      var articulosGRTalle = parsearNotaPedidoGR(items)
-      if (articulosGRTalle && articulosGRTalle.length > 0) {
-        articulosGR = articulosGRTalle
-      } else if (!tieneDistribucion) {
-        // Último intento: distribución igual
-        articulosGR = parsearDistribucionGR(items)
-      }
+      articulosGR = parsearNotaPedidoGR(items)
     }
-    
     if (articulosGR && articulosGR.length > 0) {
       var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
       return {
