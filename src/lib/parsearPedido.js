@@ -92,19 +92,27 @@ function parsearNotaPedidoGR(items) {
           descripcion_cliente: descripcion,
           precio_unitario: precio,
           talles_articulo: [],
-          sucursales: { talles: { nro_sucursal: 'talles', cantidad: 0, talles: {}, es_por_talle: true } },
+          sucursales: {},  // una "sucursal" por talle: "T4", "T6", etc.
           total_unidades: 0,
           modulos: [],
-          variantes: []
+          variantes: [],
+          es_por_talle: true
         }
         articulosOrden.push(codNuestro)
       }
 
       var art = articulosMap[codNuestro]
-      if (art.sucursales.talles.talles[talle]) return
+      var sucKey = 'T' + talle
+      if (art.sucursales[sucKey]) return  // talle ya procesado
       if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
-      art.sucursales.talles.talles[talle] = cantidad
-      art.sucursales.talles.cantidad += cantidad
+      // Cada talle es una sucursal con su propio estado (reusa SucursalesGrid)
+      art.sucursales[sucKey] = {
+        nro_sucursal: sucKey,
+        cantidad: cantidad,
+        estado: 'pendiente',
+        talles: {},
+        es_por_talle: true
+      }
       art.total_unidades += cantidad
     })
   })
@@ -114,7 +122,9 @@ function parsearNotaPedidoGR(items) {
   var resultado = articulosOrden.map(function(cod) {
     var art = articulosMap[cod]
     art.talles_articulo.sort(function(a,b){ return Number(a)-Number(b) })
-    art.sucursales = Object.values(art.sucursales)
+    art.sucursales = Object.values(art.sucursales).sort(function(a,b){
+      return Number(a.nro_sucursal.replace('T','')) - Number(b.nro_sucursal.replace('T',''))
+    })
     return art
   })
 
@@ -147,56 +157,37 @@ function parsearDistribucionGR(items) {
   var ysFilas = codigosItems.map(function(i) { return i.y })
   var yMin = Math.min.apply(null, ysFilas)
   var yMax = Math.max.apply(null, ysFilas)
-  console.log('DIST2: yMin=', yMin, 'yMax=', yMax)
 
-  // Buscar fila de encabezado: numeros de 2 digitos arriba de los codigos
-  // En el PDF los Y crecen hacia arriba, entonces el encabezado tiene Y > yMax
-  var posiblesEncabezado = items.filter(function(i) {
+  // Buscar fila de encabezado de sucursales (números de 2 dígitos) — robusto a orientación Y.
+  // El encabezado está inmediatamente fuera del rango de los códigos (arriba o abajo según orientación).
+  // Buscamos en AMBAS direcciones y nos quedamos con el grupo (misma Y) que tenga más números.
+  function buscarEncabezado(candidatos) {
+    var porYlocal = {}
+    candidatos.forEach(function(i) {
+      var y = Math.round(i.y / 4) * 4
+      if (!porYlocal[y]) porYlocal[y] = []
+      porYlocal[y].push(i)
+    })
+    var mejor = []
+    Object.keys(porYlocal).forEach(function(y) {
+      if (porYlocal[y].length > mejor.length) mejor = porYlocal[y]
+    })
+    return mejor
+  }
+
+  // Candidatos arriba (y > yMax) y abajo (y < yMin), dentro de 60px del borde del rango
+  var candArriba = items.filter(function(i) {
     return /^\d{2}$/.test(i.text) && i.y > yMax && i.y < yMax + 60
   })
-  console.log('DIST2: encabezado ARRIBA (y>yMax):', posiblesEncabezado.length, posiblesEncabezado.map(function(i){return i.text}))
-
-  // Si no encontramos encabezado arriba, buscar abajo
-  if (posiblesEncabezado.length < 3) {
-    posiblesEncabezado = items.filter(function(i) {
-      return /^\d{2}$/.test(i.text) && i.y < yMin && i.y > yMin - 60
-    })
-    console.log('DIST2: encabezado ABAJO (y<yMin):', posiblesEncabezado.length, posiblesEncabezado.map(function(i){return i.text}))
-  }
-
-  // Agrupar por Y para encontrar la fila de encabezado
-  var porY = {}
-  posiblesEncabezado.forEach(function(i) {
-    var y = Math.round(i.y / 4) * 4
-    if (!porY[y]) porY[y] = []
-    porY[y].push(i)
+  var candAbajo = items.filter(function(i) {
+    return /^\d{2}$/.test(i.text) && i.y < yMin && i.y > yMin - 60
   })
 
-  var encItems = []
-  Object.keys(porY).forEach(function(y) {
-    if (porY[y].length > encItems.length) encItems = porY[y]
-  })
+  var encArriba = buscarEncabezado(candArriba)
+  var encAbajo = buscarEncabezado(candAbajo)
 
-  if (encItems.length < 2) {
-    // Fallback: buscar en rango más amplio
-    encItems = items.filter(function(i) {
-      return /^\d{2}$/.test(i.text) &&
-        Math.abs(i.y - yMax) < 100
-    })
-    var porY2 = {}
-    encItems.forEach(function(i) {
-      var y = Math.round(i.y / 4) * 4
-      if (!porY2[y]) porY2[y] = []
-      porY2[y].push(i)
-    })
-    encItems = []
-    Object.keys(porY2).forEach(function(y) {
-      if (porY2[y].length > encItems.length) encItems = porY2[y]
-    })
-  }
-
-  console.log('DIST2: encItems final:', encItems.length, encItems.map(function(i){return i.text}))
-  if (encItems.length === 0) return null
+  // Elegir el grupo con más sucursales (el encabezado real tiene 5+ sucursales)
+  var encItems = encArriba.length >= encAbajo.length ? encArriba : encAbajo
 
   // Ordenar encabezado por X
   encItems = encItems.sort(function(a, b) { return a.x - b.x })
@@ -213,10 +204,12 @@ function parsearDistribucionGR(items) {
     var codCliente = match[1]
     var talle = String(parseInt(match[2]))
     var yFila = codItem.y
+    var pageFila = codItem.page
 
-    // Todos los items en la misma fila (tolerancia ±4px)
+    // Todos los items en la misma fila (tolerancia ±4px) Y en la misma página
+    // (dos páginas pueden superponerse en el mismo Y — filtrar por página evita mezclar artículos)
     var filaItems = items.filter(function(i) {
-      return Math.abs(i.y - yFila) <= 4
+      return Math.abs(i.y - yFila) <= 4 && i.page === pageFila
     }).sort(function(a, b) { return a.x - b.x })
 
     // codigo_nuestro: primer numero de 1-4 digitos con X > X del codigo cliente
