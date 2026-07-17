@@ -259,7 +259,7 @@ export async function exportarArticuloSheets(articulo, pedido) {
 
   // ── Formatos ──
   // headerRowIdx = índice de la fila del encabezado de tabla (la que tiene "Sucursal", "Cant. Total", etc.)
-  const headerRowIdx = rows.findIndex(r => r[0] === 'Sucursal')
+  const headerRowIdx = rows.findIndex(r => r[0] === 'Sucursal' || r[0] === 'Talle')
   const dataStart = headerRowIdx + 1
   const dataEnd = dataStart + sucursales.length
   const totalRowIdx = dataEnd
