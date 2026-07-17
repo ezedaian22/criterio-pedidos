@@ -379,7 +379,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           )}
           <div>
             <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{articulo.total_unidades} unidades totales</p>
-            {sucsNormales.some(s => s.es_por_talle)
+            {sucsNormales.some(s => s.es_por_talle || s.nro_sucursal === 'talles')
               ? <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Pedido por talle (caja completa)</p>
               : <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{sucsNormales.length} sucursales{suc0 ? ' + suc. 0 (entrega final)' : ''}</p>
             }
@@ -392,7 +392,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                 ))}
               </div>
             )}
-            {!sucsNormales.some(s => s.es_por_talle) && (
+            {!sucsNormales.some(s => s.es_por_talle || s.nro_sucursal === 'talles') && (
               <p style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
                 <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{finalizadasNormales}</span>
                 <span style={{ color: '#6b7280' }}>/{sucsNormales.length} listas</span>
@@ -460,8 +460,8 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
       </div>
 
       {/* Sucursales o talles según tipo de pedido */}
-      {sucsNormales.some(s => s.es_por_talle) ? (
-        <GrillaTalles sucursal={sucsNormales.find(s => s.es_por_talle)} articulo={articulo} />
+      {sucsNormales.some(s => s.es_por_talle || s.nro_sucursal === 'talles') ? (
+        <GrillaTalles sucursal={sucsNormales.find(s => s.es_por_talle || s.nro_sucursal === 'talles')} articulo={articulo} />
       ) : (
         <div>
           <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Sucursales</h2>
