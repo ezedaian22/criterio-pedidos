@@ -126,12 +126,14 @@ function parsearDistribucionGR(items) {
   var codigosItems = items.filter(function(i) {
     return /^\d{5}-\d{3}$/.test(i.text)
   })
+  console.log('DIST DEBUG: códigos NNNNN-NNN encontrados:', codigosItems.length)
   if (codigosItems.length === 0) return null
 
   // El Y de los codigos nos da las filas de distribucion
   var ysFilas = codigosItems.map(function(i) { return i.y })
   var yMin = Math.min.apply(null, ysFilas)
   var yMax = Math.max.apply(null, ysFilas)
+  console.log('DIST DEBUG: yMin=', yMin, 'yMax=', yMax)
 
   // Buscar fila de encabezado: numeros de 2 digitos arriba de los codigos
   // En el PDF los Y crecen hacia arriba, entonces el encabezado tiene Y > yMax
@@ -177,6 +179,7 @@ function parsearDistribucionGR(items) {
     })
   }
 
+  console.log('DIST DEBUG: encItems (encabezado sucursales):', encItems.length, encItems.map(function(i){ return i.text }))
   if (encItems.length === 0) return null
 
   // Ordenar encabezado por X
@@ -270,6 +273,7 @@ function parsearDistribucionGR(items) {
     return art
   })
 
+  console.log('DIST DEBUG: resultado:', resultado.length, resultado.map(function(a){ return a.codigo_nuestro + '/' + a.sucursales.length + 'sucs' }))
   return resultado.length > 0 ? resultado : null
 }
 
