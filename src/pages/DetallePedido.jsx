@@ -379,7 +379,10 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           )}
           <div>
             <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{articulo.total_unidades} unidades totales</p>
-            <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{sucsNormales.length} sucursales{suc0 ? ' + suc. 0 (entrega final)' : ''}</p>
+            {sucsNormales.some(s => s.es_por_talle)
+              ? <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Pedido por talle (caja completa)</p>
+              : <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{sucsNormales.length} sucursales{suc0 ? ' + suc. 0 (entrega final)' : ''}</p>
+            }
             {articulo.precio_unitario && <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Precio: ${articulo.precio_unitario.toLocaleString('es-AR')}</p>}
             {articulo.talles_articulo && articulo.talles_articulo.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.375rem', alignItems: 'center' }}>
@@ -389,10 +392,12 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                 ))}
               </div>
             )}
-            <p style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
-              <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{finalizadasNormales}</span>
-              <span style={{ color: '#6b7280' }}>/{sucsNormales.length} listas</span>
-            </p>
+            {!sucsNormales.some(s => s.es_por_talle) && (
+              <p style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{finalizadasNormales}</span>
+                <span style={{ color: '#6b7280' }}>/{sucsNormales.length} listas</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -454,13 +459,17 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
 
       </div>
 
-      {/* Sucursales — grilla compacta */}
-      <div>
-        <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Sucursales</h2>
-        <SucursalesGrid sucs={sucsNormales.filter(s => s.cantidad > 0)}
-          onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas}
-          onEditarCantidad={editarCantidad} guardando={guardando} />
-      </div>
+      {/* Sucursales o talles según tipo de pedido */}
+      {sucsNormales.some(s => s.es_por_talle) ? (
+        <GrillaTalles sucursal={sucsNormales.find(s => s.es_por_talle)} articulo={articulo} />
+      ) : (
+        <div>
+          <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Sucursales</h2>
+          <SucursalesGrid sucs={sucsNormales.filter(s => s.cantidad > 0)}
+            onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas}
+            onEditarCantidad={editarCantidad} guardando={guardando} />
+        </div>
+      )}
 
       {suc0 && (
         <div>
@@ -901,6 +910,38 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargan
           </button>
         )}
         {suc.estado === 'finalizado' && <span style={{ color: '#4ade80', fontSize: '1.25rem' }}>✓</span>}
+      </div>
+    </div>
+  )
+}
+
+function GrillaTalles({ sucursal, articulo }) {
+  if (!sucursal || !sucursal.talles) return null
+  const talles = sucursal.talles
+  const tallesOrdenados = Object.keys(talles).sort(function(a,b){ return Number(a)-Number(b) })
+  const total = Object.values(talles).reduce(function(s,c){ return s+c }, 0)
+
+  return (
+    <div>
+      <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>
+        Distribución por talle
+      </h2>
+      <div style={{ background: '#1a1d27', border: '1px solid #2a2d3e', borderRadius: '0.75rem', padding: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(5rem, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          {tallesOrdenados.map(function(t) {
+            return (
+              <div key={t} style={{ background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.5rem', padding: '0.625rem 0.375rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 600, marginBottom: '0.2rem' }}>TALLE</div>
+                <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.25rem', color: '#6b8fff' }}>{t}</div>
+                <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1rem', color: 'white' }}>{talles[t]}u</div>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ borderTop: '1px solid #2a2d3e', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Total</span>
+          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.1rem', color: 'white' }}>{total}u</span>
+        </div>
       </div>
     </div>
   )
