@@ -132,201 +132,115 @@ function parsearNotaPedidoGR(items) {
 }
 
 function parsearDistribucionGR(items) {
-  // PDF.js a veces pega el código-talle con el código nuestro en un solo item:
-  // "50789-004 128" en vez de "50789-004". Normalizamos: contemplar guiones unicode y nbsp.
-  var itemsNorm = []
+  // Normalizar: PDF.js pega "50789-004 128" (codigo-talle + codigo nuestro) en un item.
+  var codRe = /^(\d{5})[-\u2010\u2011\u2012\u2013\u2014](\d{3})\s+(\d{1,4})$/
+  var codigosTalle = []  // { codCliente, talle, codNuestro, x, y }
   items.forEach(function(i) {
-    var m = i.text.match(/^(\d{5}[-\u2010\u2011\u2012\u2013\u2014]\d{3})[\s\u00a0]+(\d{1,4})\b/)
+    var m = i.text.match(codRe)
     if (m) {
-      var codLimpio = m[1].replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
-      itemsNorm.push({ x: i.x, y: i.y, text: codLimpio, page: i.page })
-      itemsNorm.push({ x: i.x + 55, y: i.y, text: m[2], page: i.page, _codNuestro: true })
-    } else {
-      itemsNorm.push(i)
+      codigosTalle.push({ codCliente: m[1], talle: String(parseInt(m[2])), codNuestro: m[3], x: i.x, y: i.y, page: i.page })
     }
   })
-  items = itemsNorm
-
-  // PDF.js puede pegar varios números en un solo item, ej: "3 3 3 2 7 3 3 6 30"
-  // (cantidades de una fila) o "01 04 06 10 11 13 14 15 17 TOTAL" (encabezado).
-  // Separamos esos items en items virtuales, uno por número, estimando su X.
-  var itemsExpandido = []
-  items.forEach(function(i) {
-    // No expandir items que ya son código-talle (NNNNN-NNN) ni que tienen guión
-    if (/\d{5}-\d{3}/.test(i.text) || i._codNuestro) {
-      itemsExpandido.push(i)
-      return
-    }
-    // ¿El texto son varios tokens y al menos 3 son números de 2 dígitos o cantidades? → separar
-    var tokens = i.text.trim().split(/\s+/)
-    var numTokens = tokens.filter(function(t){ return /^\d{1,4}$/.test(t) })
-    if (tokens.length >= 3 && numTokens.length >= 3 && numTokens.length >= tokens.length - 1) {
-      var anchoAprox = 34
-      tokens.forEach(function(t, idx) {
-        itemsExpandido.push({ x: i.x + idx * anchoAprox, y: i.y, text: t, page: i.page })
-      })
-    } else {
-      itemsExpandido.push(i)
-    }
-  })
-  items = itemsExpandido
-
-  // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
-  var codigosItems = items.filter(function(i) {
-    return /^\d{5}-\d{3}$/.test(i.text)
-  })
-  if (codigosItems.length === 0) return null
-
-  // Detección del encabezado de sucursales.
-  // La fila de encabezado es la que tiene MÁS números de 2 dígitos alineados en Y.
-  // Los números de sucursal (01,04,06...) son 2 dígitos. La palabra "TOTAL" está en esa
-  // misma fila pero NO es número, así que no entra. Robusto a X y a orientación Y.
-  var candidatosEnc = items.filter(function(i) {
-    return /^\d{2}$/.test(i.text)
-  })
-  var gruposPorY = {}
-  candidatosEnc.forEach(function(i) {
-    var y = Math.round(i.y / 4) * 4
-    if (!gruposPorY[y]) gruposPorY[y] = []
-    gruposPorY[y].push(i)
-  })
-  var encItems = []
-  Object.keys(gruposPorY).forEach(function(y) {
-    var grupo = gruposPorY[y]
-    var xVistas = {}
-    var unicos = []
-    grupo.sort(function(a,b){ return a.x - b.x }).forEach(function(it) {
-      var xk = Math.round(it.x / 10) * 10
-      if (!xVistas[xk]) { xVistas[xk] = true; unicos.push(it) }
+  // Fallback: código-talle sin codNuestro pegado (por si viene separado)
+  if (codigosTalle.length === 0) {
+    items.forEach(function(i) {
+      var m = i.text.match(/^(\d{5})[-\u2010\u2011\u2012\u2013\u2014](\d{3})$/)
+      if (m) {
+        // buscar codNuestro cerca en el mismo Y
+        var cn = null
+        items.forEach(function(j) {
+          if (!cn && Math.abs(j.y - i.y) <= 6 && j.x > i.x && j.x < i.x + 80 && /^\d{1,4}$/.test(j.text)) cn = j.text
+        })
+        codigosTalle.push({ codCliente: m[1], talle: String(parseInt(m[2])), codNuestro: cn || m[1], x: i.x, y: i.y, page: i.page })
+      }
     })
-    if (unicos.length > encItems.length) encItems = unicos
+  }
+  if (codigosTalle.length === 0) return null
+
+  // Detectar la COLUMNA de sucursales: los números de 2 dígitos que comparten X (columna vertical).
+  // Agrupar por X y quedarse con el grupo que tenga más números de 2 dígitos.
+  var dosDig = items.filter(function(i) { return /^\d{2}$/.test(i.text) })
+  var porX = {}
+  dosDig.forEach(function(i) {
+    var xk = Math.round(i.x / 8) * 8
+    if (!porX[xk]) porX[xk] = []
+    porX[xk].push(i)
   })
-
-  // El encabezado real tiene al menos 5 sucursales
-  if (encItems.length < 5) return null
-
-  // Ordenar encabezado por X
-  encItems = encItems.sort(function(a, b) { return a.x - b.x })
-  var sucursales = encItems.map(function(i) { return i.text })
-  var xCols = encItems.map(function(i) { return i.x })
-
-  // Detectar la X de la columna TOTAL para EXCLUIRLA al leer cantidades.
-  // TOTAL está a la derecha de la última sucursal. Buscar la palabra "TOTAL" o el item
-  // numérico más a la derecha que esté después de la última columna de sucursal.
-  var xUltimaSuc = xCols[xCols.length - 1]
-  var xTotal = null
-  items.forEach(function(i) {
-    if (/total/i.test(i.text) && i.x > xUltimaSuc - 20) {
-      if (xTotal === null || i.x < xTotal) xTotal = i.x
-    }
+  var colSucs = []
+  Object.keys(porX).forEach(function(xk) {
+    if (porX[xk].length > colSucs.length) colSucs = porX[xk]
   })
-  // Si no hay palabra TOTAL, asumir que la columna total está ~35px después de la última suc
-  if (xTotal === null) xTotal = xUltimaSuc + 35
+  if (colSucs.length < 5) return null
 
-  // Parsear cada fila de codigo-talle
+  // Mapa Y → nro_sucursal (cada sucursal está en un Y distinto en la columna)
+  var sucPorY = colSucs.map(function(i) { return { y: i.y, suc: i.text } }).sort(function(a,b){ return a.y - b.y })
+
+  // Para cada código-talle, leer las cantidades en su MISMA X (columna del artículo).
+  // Cada cantidad se alinea por Y con la sucursal correspondiente.
   var articulos = {}
+  var ordenArt = []
 
-  codigosItems.forEach(function(codItem) {
-    var match = codItem.text.match(/^(\d+)-(\d+)$/)
-    if (!match) return
-
-    var codCliente = match[1]
-    var talle = String(parseInt(match[2]))
-    var yFila = codItem.y
-    var pageFila = codItem.page
-
-    // Items en la misma fila. Las cantidades pueden estar en un Y levemente distinto
-    // al del código (ej: código y=500, cantidades y=496). Tolerancia amplia (±10px).
-    var filaItems = items.filter(function(i) {
-      return Math.abs(i.y - yFila) <= 10 && i.page === pageFila
-    }).sort(function(a, b) { return a.x - b.x })
-
-    // codigo_nuestro: primer numero de 1-4 digitos con X > X del codigo cliente
-    var codNuestro = null
-    var descTextos = []
-    filaItems.forEach(function(fi) {
-      if (fi.text === codItem.text) return
-      if (fi._codNuestro && !codNuestro) { codNuestro = fi.text; return }
-      if (!codNuestro && /^\d{1,4}$/.test(fi.text) && fi.x > codItem.x && fi.x < xCols[0] - 20) {
-        codNuestro = fi.text
-      } else if (codNuestro && /[A-Za-z]/.test(fi.text)) {
-        descTextos.push(fi.text)
-      }
+  codigosTalle.forEach(function(ct) {
+    // Números en la misma X que este código-talle (tolerancia ±6px), que no sean el código mismo
+    var colX = ct.x
+    var numsColumna = items.filter(function(i) {
+      return /^\d{1,4}$/.test(i.text) &&
+             Math.abs(i.x - colX) <= 6 &&
+             i.page === ct.page &&
+             !(Math.abs(i.y - ct.y) <= 6)  // excluir la fila del código
     })
 
-    if (!codNuestro) return
+    // Descripción: textos con letras en la misma X
+    var desc = items.filter(function(i) {
+      return /[A-Za-z]/.test(i.text) && Math.abs(i.x - colX) <= 8 && i.page === ct.page
+    }).sort(function(a,b){ return a.y - b.y }).map(function(i){ return i.text }).join(' ')
 
-    // Leer cantidades: cada número de la fila se alinea con la columna de sucursal
-    // MÁS CERCANA en X. El número que quede más allá de la última sucursal es el TOTAL → se ignora.
-    var xPrimeraCol = xCols[0]
-    var xUltimaCol = xCols[xCols.length - 1]
-    var numsFila = filaItems.filter(function(fi) {
-      return /^\d+$/.test(fi.text) &&
-             fi.x >= xPrimeraCol - 25 &&
-             fi !== codItem &&
-             !fi._codNuestro &&
-             fi.text !== codNuestro
-    }).sort(function(a, b) { return a.x - b.x })
-
-    // Deduplicar por X
-    var numsUnicos = []
-    var xNum = {}
-    numsFila.forEach(function(fi) {
-      var xk = Math.round(fi.x / 8) * 8
-      if (!xNum[xk]) { xNum[xk] = true; numsUnicos.push(fi) }
-    })
-
-    var cantidades = {}
-    numsUnicos.forEach(function(fi) {
-      // Si está claramente más a la derecha que la última sucursal, es el TOTAL → ignorar
-      if (fi.x > xUltimaCol + 18) return
-      // Buscar la columna de sucursal más cercana en X
-      var mejorIdx = -1
-      var mejorDist = 999
-      xCols.forEach(function(xCol, idx) {
-        var dist = Math.abs(fi.x - xCol)
-        if (dist < mejorDist) { mejorDist = dist; mejorIdx = idx }
-      })
-      if (mejorIdx >= 0 && mejorDist <= 20) {
-        var cant = parseInt(fi.text)
-        if (cant > 0) cantidades[sucursales[mejorIdx]] = cant
-      }
-    })
-
+    var codNuestro = ct.codNuestro
     if (!articulos[codNuestro]) {
       articulos[codNuestro] = {
         codigo_nuestro: codNuestro,
-        codigo_cliente: codCliente,
-        descripcion_cliente: descTextos.join(' '),
+        codigo_cliente: ct.codCliente,
+        descripcion_cliente: desc,
         precio_unitario: 0,
         talles_articulo: [],
         sucursales: {},
         total_unidades: 0,
         modulos: []
       }
+      ordenArt.push(codNuestro)
     }
-
     var art = articulos[codNuestro]
-    if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
+    if (art.talles_articulo.indexOf(ct.talle) === -1) art.talles_articulo.push(ct.talle)
 
-    Object.keys(cantidades).forEach(function(suc) {
-      var cant = cantidades[suc]
-      if (!art.sucursales[suc]) {
-        art.sucursales[suc] = { nro_sucursal: suc, cantidad: 0, talles: {} }
+    // Alinear cada cantidad por Y con la sucursal más cercana. Ignorar el TOTAL.
+    numsColumna.forEach(function(num) {
+      // Buscar la sucursal con Y más cercano
+      var mejor = null, mejorDist = 999
+      sucPorY.forEach(function(s) {
+        var d = Math.abs(s.y - num.y)
+        if (d < mejorDist) { mejorDist = d; mejor = s }
+      })
+      // Si la sucursal más cercana es "TOTAL", o no hay match cercano, ignorar
+      if (!mejor || mejorDist > 12 || mejor.suc === 'TOTAL') return
+      var cant = parseInt(num.text)
+      if (cant <= 0) return
+      if (!art.sucursales[mejor.suc]) {
+        art.sucursales[mejor.suc] = { nro_sucursal: mejor.suc, cantidad: 0, talles: {} }
       }
-      art.sucursales[suc].talles[talle] = cant
-      art.sucursales[suc].cantidad += cant
+      art.sucursales[mejor.suc].talles[ct.talle] = cant
+      art.sucursales[mejor.suc].cantidad += cant
       art.total_unidades += cant
     })
   })
 
-  var resultado = Object.values(articulos).map(function(art) {
+  var resultado = ordenArt.map(function(cod) {
+    var art = articulos[cod]
     art.talles_articulo.sort(function(a, b) { return Number(a) - Number(b) })
     art.sucursales = Object.values(art.sucursales)
       .filter(function(s) { return s.cantidad > 0 })
       .sort(function(a, b) { return Number(a.nro_sucursal) - Number(b.nro_sucursal) })
     return art
-  })
+  }).filter(function(art) { return art.sucursales.length > 0 })
 
   return resultado.length > 0 ? resultado : null
 }
@@ -1013,8 +927,6 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   if (esPDF) {
     items = await extraerItemsPDF(base64)
     if (items) textoPDF = items.map(function(i) { return i.text }).join(' ')
-    // DEBUG: exponer items reales en window para inspección
-    try { if (typeof window !== 'undefined') window._itemsReales = items } catch(e) {}
   }
 
   // Detectar si es GR por texto
