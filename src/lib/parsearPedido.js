@@ -147,18 +147,21 @@ function parsearDistribucionGR(items) {
   var ysFilas = codigosItems.map(function(i) { return i.y })
   var yMin = Math.min.apply(null, ysFilas)
   var yMax = Math.max.apply(null, ysFilas)
+  console.log('DIST2: yMin=', yMin, 'yMax=', yMax)
 
   // Buscar fila de encabezado: numeros de 2 digitos arriba de los codigos
   // En el PDF los Y crecen hacia arriba, entonces el encabezado tiene Y > yMax
   var posiblesEncabezado = items.filter(function(i) {
     return /^\d{2}$/.test(i.text) && i.y > yMax && i.y < yMax + 60
   })
+  console.log('DIST2: encabezado ARRIBA (y>yMax):', posiblesEncabezado.length, posiblesEncabezado.map(function(i){return i.text}))
 
   // Si no encontramos encabezado arriba, buscar abajo
   if (posiblesEncabezado.length < 3) {
     posiblesEncabezado = items.filter(function(i) {
       return /^\d{2}$/.test(i.text) && i.y < yMin && i.y > yMin - 60
     })
+    console.log('DIST2: encabezado ABAJO (y<yMin):', posiblesEncabezado.length, posiblesEncabezado.map(function(i){return i.text}))
   }
 
   // Agrupar por Y para encontrar la fila de encabezado
@@ -192,6 +195,7 @@ function parsearDistribucionGR(items) {
     })
   }
 
+  console.log('DIST2: encItems final:', encItems.length, encItems.map(function(i){return i.text}))
   if (encItems.length === 0) return null
 
   // Ordenar encabezado por X
