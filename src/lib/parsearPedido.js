@@ -132,15 +132,6 @@ function parsearNotaPedidoGR(items) {
 }
 
 function parsearDistribucionGR(items) {
-  // DIAGNÓSTICO CONCISO
-  var _cods = items.filter(function(i){ return /^\d{5}[-\u2010\u2011\u2012\u2013\u2014]\d{3}/.test(i.text) })
-  var _dosDig350 = items.filter(function(i){ return /^\d{2}$/.test(i.text) && i.x > 350 })
-  var _porY = {}
-  _dosDig350.forEach(function(i){ var y = Math.round(i.y/4)*4; if(!_porY[y])_porY[y]=[]; _porY[y].push(i) })
-  var _mejor = []
-  Object.keys(_porY).forEach(function(y){ if(_porY[y].length>_mejor.length)_mejor=_porY[y] })
-  console.log('DIAG: códigos NNNNN-NNN=' + _cods.length + ' | encabezado sucs=' + _mejor.length + ' [' + _mejor.sort(function(a,b){return a.x-b.x}).map(function(i){return i.text}).join(',') + ']')
-
   // PDF.js a veces pega el código-talle con el código nuestro en un solo item:
   // "50789-004 128" en vez de "50789-004". Normalizamos: contemplar guiones unicode y nbsp.
   var itemsNorm = []
@@ -162,13 +153,13 @@ function parsearDistribucionGR(items) {
   })
   if (codigosItems.length === 0) return null
 
-  // Detección del encabezado de sucursales — INDEPENDIENTE de la orientación de Y.
-  // El encabezado es la fila (grupo con misma Y) que tiene MÁS números de 2 dígitos
-  // en posiciones de columna de distribución (x > 350). Los números de sucursal (01,04,06...)
-  // están todos alineados en una sola fila; ninguna otra fila del PDF tiene tantos números
-  // de 2 dígitos juntos en esas X.
+  // Detección del encabezado de sucursales — INDEPENDIENTE de X y de Y.
+  // El encabezado es la fila (grupo con misma Y) que tiene MÁS números de 2 dígitos.
+  // Los números de sucursal (01,04,06...) están todos alineados en una sola fila;
+  // ninguna otra fila del PDF tiene tantos números de 2 dígitos juntos.
+  // NO filtramos por X (las columnas pueden estar en cualquier posición según el PDF).
   var candidatosEnc = items.filter(function(i) {
-    return /^\d{2}$/.test(i.text) && i.x > 350
+    return /^\d{2}$/.test(i.text)
   })
   // Agrupar por Y (redondeada) y quedarse con el grupo más grande
   var gruposPorY = {}
@@ -286,7 +277,6 @@ function parsearDistribucionGR(items) {
     return art
   })
 
-  console.log('DIAG: resultado FINAL=' + resultado.length + ' arts [' + resultado.map(function(a){return a.codigo_nuestro+'/'+a.sucursales.length+'sucs'}).join(',') + ']')
   return resultado.length > 0 ? resultado : null
 }
 
