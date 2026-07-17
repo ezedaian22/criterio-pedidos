@@ -403,17 +403,6 @@ function RevisarPedidos({ parseados, clientes, onEditar, onVolver, onConfirmar, 
                   <input type="date" className="input" style={{ width: 'auto' }} value={p.data && p.data.fecha_entrega || ''} onChange={e => editarFecha(idx, e.target.value)} />
                 </div>
 
-                {/* DEBUG: items reales del navegador para diagnóstico */}
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#f59e0b', display: 'block', marginBottom: '0.25rem' }}>DEBUG items (copiá y pegá esto)</label>
-                  <textarea
-                    readOnly
-                    onClick={e => e.target.select()}
-                    style={{ width: '100%', height: '80px', fontSize: '0.6rem', background: '#0a0c12', color: '#8fbc8f', border: '1px solid #333', borderRadius: '0.375rem', padding: '0.5rem', fontFamily: 'monospace' }}
-                    value={(typeof window !== 'undefined' && window._itemsReales) ? JSON.stringify(window._itemsReales.filter(function(it){ return it.page === 2 })) : 'sin items'}
-                  />
-                </div>
-
                 {/* Artículos */}
                 <div>
                   <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem', textTransform: 'uppercase' }}>{p.data && p.data.articulos && p.data.articulos.length} artículos</div>
