@@ -247,7 +247,11 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
   const variantes = articulo.pedido_articulo_variantes || []
   const modulos = articulo.pedido_modulos || []
 
-  const sucsNormales = sucursales.filter(s => !s.es_entrega_final).sort((a, b) => Number(a.nro_sucursal) - Number(b.nro_sucursal))
+  const sucsNormales = sucursales.filter(s => !s.es_entrega_final).sort((a, b) => {
+    const na = Number(String(a.nro_sucursal).replace('T', ''))
+    const nb = Number(String(b.nro_sucursal).replace('T', ''))
+    return na - nb
+  })
   const suc0 = sucursales.find(s => s.es_entrega_final)
   const todasNormalesOk = sucsNormales.length > 0 && sucsNormales.every(s => s.estado === 'finalizado')
   const finalizadasNormales = sucsNormales.filter(s => s.estado === 'finalizado').length
@@ -379,7 +383,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           )}
           <div>
             <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{articulo.total_unidades} unidades totales</p>
-            {sucsNormales.some(s => s.es_por_talle || s.nro_sucursal === 'talles')
+            {sucsNormales.some(s => s.es_por_talle || (s.nro_sucursal && String(s.nro_sucursal).startsWith('T')))
               ? <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Pedido por talle (caja completa)</p>
               : <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{sucsNormales.length} sucursales{suc0 ? ' + suc. 0 (entrega final)' : ''}</p>
             }
@@ -392,7 +396,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                 ))}
               </div>
             )}
-            {!sucsNormales.some(s => s.es_por_talle || s.nro_sucursal === 'talles') && (
+            {!sucsNormales.some(s => s.es_por_talle || (s.nro_sucursal && String(s.nro_sucursal).startsWith('T'))) && (
               <p style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
                 <span style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{finalizadasNormales}</span>
                 <span style={{ color: '#6b7280' }}>/{sucsNormales.length} listas</span>
@@ -460,8 +464,13 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
       </div>
 
       {/* Sucursales o talles según tipo de pedido */}
-      {sucsNormales.some(s => s.es_por_talle || s.nro_sucursal === 'talles') ? (
-        <GrillaTalles sucursal={sucsNormales.find(s => s.es_por_talle || s.nro_sucursal === 'talles')} articulo={articulo} />
+      {sucsNormales.some(s => s.es_por_talle || (s.nro_sucursal && String(s.nro_sucursal).startsWith('T'))) ? (
+        <div>
+          <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Distribución por talle</h2>
+          <SucursalesGrid sucs={sucsNormales.filter(s => s.cantidad > 0)}
+            onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas}
+            onEditarCantidad={editarCantidad} guardando={guardando} esTalle />
+        </div>
       ) : (
         <div>
           <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Sucursales</h2>
@@ -517,7 +526,7 @@ const ESTADOS_LEYENDA = [
   { estado: 'finalizado', color: '#22c55e', label: 'Finalizado' },
 ]
 
-function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, guardando, especial, bloqueada }) {
+function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, guardando, especial, bloqueada, esTalle }) {
   const [seleccionada, setSeleccionada] = useState(null)
   const sucPanel = seleccionada ? sucs.find(s => s.id === seleccionada) : null
 
@@ -614,7 +623,7 @@ function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, carga
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.1rem', color: especial ? '#c084fc' : '#6b8fff' }}>Suc. {suc.nro_sucursal}</span>
+          <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.1rem', color: especial ? '#c084fc' : '#6b8fff' }}>{esTalle ? 'Talle ' + String(suc.nro_sucursal).replace('T','') : 'Suc. ' + suc.nro_sucursal}</span>
           <span style={{ fontSize: '0.8rem', color: labelColor[suc.estado], fontWeight: 600 }}>{labels[suc.estado]}</span>
           {/* Cantidad editable */}
           {suc.estado !== 'finalizado' && editandoCantidad ? (
@@ -914,8 +923,7 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargan
     </div>
   )
 }
-
-function GrillaTalles({ sucursal, articulo }) {
+) {
   if (!sucursal || !sucursal.talles) return null
   const talles = sucursal.talles
   const tallesOrdenados = Object.keys(talles).sort(function(a,b){ return Number(a)-Number(b) })
