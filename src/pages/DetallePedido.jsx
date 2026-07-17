@@ -590,7 +590,7 @@ function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, gua
 
       {/* Panel expandido — ancho completo, fuera de la grilla */}
       {sucPanel && (
-        <PanelSucursal suc={sucPanel} especial={especial} bloqueada={bloqueada}
+        <PanelSucursal suc={sucPanel} especial={especial} bloqueada={bloqueada} esTalle={esTalle}
           onAvanzar={() => onAvanzar(sucPanel)}
           onGuardarCajas={n => { onGuardarCajas(sucPanel, n); setSeleccionada(null) }}
           onEditarCantidad={n => onEditarCantidad(sucPanel, n)}
@@ -601,7 +601,7 @@ function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, gua
   )
 }
 
-function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargando, especial, bloqueada, onCerrar }) {
+function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargando, especial, bloqueada, onCerrar, esTalle }) {
   const [cajasInput, setCajasInput] = useState(suc.nro_cajas ? String(suc.nro_cajas) : '')
   const [editandoCantidad, setEditandoCantidad] = useState(false)
   const [cantidadInput, setCantidadInput] = useState(String(suc.cantidad))
