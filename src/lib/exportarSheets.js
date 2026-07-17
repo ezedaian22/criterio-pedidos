@@ -183,7 +183,7 @@ export async function exportarArticuloSheets(articulo, pedido) {
   // Filas de datos
   const sucursales = (articulo.pedido_sucursales || [])
     .filter(s => s.cantidad > 0)
-    .sort((a, b) => Number(a.nro_sucursal) - Number(b.nro_sucursal))
+    .sort((a, b) => Number(String(a.nro_sucursal).replace('T','')) - Number(String(b.nro_sucursal).replace('T','')))
 
   // Encabezado con info del artículo (filas de metadata)
   const rows = []
@@ -205,17 +205,19 @@ export async function exportarArticuloSheets(articulo, pedido) {
   rows.push([])
 
   // Encabezado tabla
-  const headerRow = ['Sucursal', 'Cant. Total', ...talles.map(t => 'T' + t), 'Estado', 'Cajas', 'Fecha final.']
+  // Detectar si es pedido por talle (nro_sucursal empieza con T)
+  const esPorTalle = sucursales.some(s => String(s.nro_sucursal).startsWith('T'))
+  const headerRow = [esPorTalle ? 'Talle' : 'Sucursal', 'Cant. Total', ...talles.map(t => 'T' + t), 'Estado', 'Cajas', 'Fecha final.']
   rows.push(headerRow)
 
   // Filas de sucursales — separar Sucati (1-9) y Chandal (10-23) si corresponde
   const esSucati = razonSocial && (razonSocial.includes('SUCATI') || razonSocial.includes('CHANDAL'))
   const sucsSucati = sucursales.filter(s => { const n = Number(s.nro_sucursal); return n >= 1 && n <= 9 })
   const sucsChandal = sucursales.filter(s => { const n = Number(s.nro_sucursal); return n >= 10 && n <= 23 })
-  const sucsOtras = sucursales.filter(s => { const n = Number(s.nro_sucursal); return n < 1 || (n > 23) })
+  const sucsOtras = sucursales.filter(s => { const n = Number(s.nro_sucursal); return isNaN(n) || n < 1 || (n > 23) })
 
   const filaEstado = (suc) => [
-    'Suc. ' + suc.nro_sucursal,
+    esPorTalle ? 'Talle ' + String(suc.nro_sucursal).replace('T','') : 'Suc. ' + suc.nro_sucursal,
     suc.cantidad,
     ...talles.map(t => (suc.talles && suc.talles[t]) ? suc.talles[t] : 0),
     suc.estado === 'finalizado' ? 'Finalizado' : suc.estado === 'guardado' ? 'Guardado' : suc.estado === 'separado' ? 'Separado' : 'Pendiente',
@@ -237,9 +239,9 @@ export async function exportarArticuloSheets(articulo, pedido) {
     sucursales.forEach(suc => rows.push(filaEstado(suc)))
   }
 
-  // Fila total
-  const totalCantidad = sucursales.reduce((s, x) => s + (x.cantidad || 0), 0)
-  const totalPorTalle = talles.map(t => sucursales.reduce((s, x) => s + ((x.talles && x.talles[t]) ? Number(x.talles[t]) : 0), 0))
+  // Fila total — solo suma sucursales/talles FINALIZADOS
+  const totalCantidad = sucursales.reduce((s, x) => s + (x.estado === 'finalizado' ? (x.cantidad || 0) : 0), 0)
+  const totalPorTalle = talles.map(t => sucursales.reduce((s, x) => s + ((x.estado === 'finalizado' && x.talles && x.talles[t]) ? Number(x.talles[t]) : 0), 0))
   rows.push(['TOTAL', totalCantidad, ...totalPorTalle, '', '', ''])
 
   // Crear spreadsheet
@@ -419,7 +421,11 @@ export async function exportarRomaneoSheets(pedido, articulos) {
       : ''
     const sucucursales = (art.pedido_sucursales || [])
       .filter(s => s.cantidad > 0)
-      .sort((a, b) => Number(a.nro_sucursal) - Number(b.nro_sucursal))
+      .sort((a, b) => Number(String(a.nro_sucursal).replace('T','')) - Number(String(b.nro_sucursal).replace('T','')))
+
+    // Total del artículo = solo lo FINALIZADO
+    const totalArtFinalizado = sucucursales.reduce((s, x) => s + (x.estado === 'finalizado' ? (x.cantidad || 0) : 0), 0)
+    const esPorTalle = sucucursales.some(s => String(s.nro_sucursal).startsWith('T'))
 
     sucucursales.forEach((suc, idx) => {
       rows.push([
@@ -428,14 +434,14 @@ export async function exportarRomaneoSheets(pedido, articulos) {
         idx === 0 ? (art.descripcion_correcta || art.descripcion_cliente || '') : '',
         idx === 0 ? precio : '',
         idx === 0 ? descuentoPedido : '',
-        'Suc. ' + suc.nro_sucursal,
+        (esPorTalle ? 'Talle ' + String(suc.nro_sucursal).replace('T','') : 'Suc. ' + suc.nro_sucursal),
         suc.cantidad,
         ...talles.map(t => (suc.talles && suc.talles[t]) ? suc.talles[t] : 0),
-        idx === 0 ? (art.total_unidades || '') : ''
+        idx === 0 ? (totalArtFinalizado || '') : ''
       ])
     })
 
-    totalGeneral += art.total_unidades || 0
+    totalGeneral += totalArtFinalizado
   })
 
   // Fila total general
