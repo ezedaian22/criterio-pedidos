@@ -132,11 +132,14 @@ function parsearNotaPedidoGR(items) {
 }
 
 function parsearDistribucionGR(items) {
-  // DEBUG: volcar los items crudos exactos que entrega PDF.js (para reproducir el entorno)
-  try {
-    var dump = items.map(function(i){ return {x:i.x, y:i.y, t:i.text, p:i.page} })
-    console.log('RAW_ITEMS_JSON_START' + JSON.stringify(dump) + 'RAW_ITEMS_JSON_END')
-  } catch(e) {}
+  // DIAGNÓSTICO CONCISO
+  var _cods = items.filter(function(i){ return /^\d{5}[-\u2010\u2011\u2012\u2013\u2014]\d{3}/.test(i.text) })
+  var _dosDig350 = items.filter(function(i){ return /^\d{2}$/.test(i.text) && i.x > 350 })
+  var _porY = {}
+  _dosDig350.forEach(function(i){ var y = Math.round(i.y/4)*4; if(!_porY[y])_porY[y]=[]; _porY[y].push(i) })
+  var _mejor = []
+  Object.keys(_porY).forEach(function(y){ if(_porY[y].length>_mejor.length)_mejor=_porY[y] })
+  console.log('DIAG: códigos NNNNN-NNN=' + _cods.length + ' | encabezado sucs=' + _mejor.length + ' [' + _mejor.sort(function(a,b){return a.x-b.x}).map(function(i){return i.text}).join(',') + ']')
 
   // PDF.js a veces pega el código-talle con el código nuestro en un solo item:
   // "50789-004 128" en vez de "50789-004". Normalizamos: contemplar guiones unicode y nbsp.
@@ -283,6 +286,7 @@ function parsearDistribucionGR(items) {
     return art
   })
 
+  console.log('DIAG: resultado FINAL=' + resultado.length + ' arts [' + resultado.map(function(a){return a.codigo_nuestro+'/'+a.sucursales.length+'sucs'}).join(',') + ']')
   return resultado.length > 0 ? resultado : null
 }
 
