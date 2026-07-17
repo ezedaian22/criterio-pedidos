@@ -122,13 +122,6 @@ function parsearNotaPedidoGR(items) {
 }
 
 function parsearDistribucionGR(items) {
-  // DEBUG: mostrar items con dígitos y guión, con códigos de carácter exactos
-  console.log('DIST DEBUG total items:', items.length)
-  items.filter(function(i){ return /\d{5}/.test(i.text) }).slice(0, 20).forEach(function(i){
-    var chars = i.text.split('').map(function(ch){ return ch.charCodeAt(0) }).join(',')
-    console.log('DIST ITEM x=' + i.x + ' text=' + JSON.stringify(i.text) + ' codes=[' + chars + ']')
-  })
-
   // PDF.js a veces pega el código-talle con el código nuestro en un solo item:
   // "50789-004 128" en vez de "50789-004". Normalizamos: contemplar guiones unicode y nbsp.
   var itemsNorm = []
@@ -148,7 +141,6 @@ function parsearDistribucionGR(items) {
   var codigosItems = items.filter(function(i) {
     return /^\d{5}-\d{3}$/.test(i.text)
   })
-  console.log('DIST DEBUG códigos detectados tras normalizar:', codigosItems.length)
   if (codigosItems.length === 0) return null
 
   // El Y de los codigos nos da las filas de distribucion
