@@ -132,6 +132,12 @@ function parsearNotaPedidoGR(items) {
 }
 
 function parsearDistribucionGR(items) {
+  // DEBUG: volcar los items crudos exactos que entrega PDF.js (para reproducir el entorno)
+  try {
+    var dump = items.map(function(i){ return {x:i.x, y:i.y, t:i.text, p:i.page} })
+    console.log('RAW_ITEMS_JSON_START' + JSON.stringify(dump) + 'RAW_ITEMS_JSON_END')
+  } catch(e) {}
+
   // PDF.js a veces pega el código-talle con el código nuestro en un solo item:
   // "50789-004 128" en vez de "50789-004". Normalizamos: contemplar guiones unicode y nbsp.
   var itemsNorm = []
