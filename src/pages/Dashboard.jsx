@@ -3,10 +3,6 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { alertaFecha, formatFecha, pct } from '../lib/utils'
 
-// Buffer del XLS convertido guardado fuera de React para evitar garbage collection
-var _xlsxBuffer = null
-var _xlsxNombre = ''
-
 export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [pedidos, setPedidos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -14,37 +10,6 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [busqueda, setBusqueda] = useState('')
   const [confirmarEliminar, setConfirmarEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
-  const [convirtiendo, setConvirtiendo] = useState(false)
-  const [xlsxListo, setXlsxListo] = useState(false)
-  const [xlsxNombreState, setXlsxNombreState] = useState('')
-  const [xlsxUrl, setXlsxUrl] = useState(null)
-
-  async function convertirXLS(f) {
-    setConvirtiendo(true)
-    setXlsxListo(false)
-    setXlsxUrl(null)
-    _xlsxBuffer = null
-    try {
-      if (!window.XLSX) {
-        await new Promise(function(resolve, reject) {
-          var s = document.createElement('script')
-          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
-          s.onload = resolve; s.onerror = reject
-          document.head.appendChild(s)
-        })
-      }
-      var buf = await f.arrayBuffer()
-      var wb = window.XLSX.read(new Uint8Array(buf), { type: 'array', cellStyles: true, cellDates: true })
-      var arr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-      _xlsxBuffer = new Uint8Array(arr)
-      var nombre = f.name.slice(0, -4) + '.xlsx'
-      var blob = new Blob([_xlsxBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      setXlsxUrl(URL.createObjectURL(blob))
-      setXlsxNombreState(nombre)
-      setXlsxListo(true)
-    } catch(err) { console.error(err) }
-    finally { setConvirtiendo(false) }
-  }
 
   useEffect(() => { cargarPedidos() }, [])
 
@@ -137,7 +102,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
         <button className="btn-primary" style={{ fontSize: '0.875rem' }} onClick={() => onNuevoPedido()}>+ Nuevo pedido</button>
       </div>
 
-      {/* Instrucciones + Conversor Sucati */}
+      {/* Instrucciones carga de pedidos */}
       <div style={{ background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.75rem', padding: '0.75rem 0.875rem' }}>
         <p style={{ color: '#9ca3af', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.5rem' }}>Cómo cargar pedidos</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', marginBottom: '0.75rem' }}>
@@ -151,26 +116,8 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
           </div>
           <div style={{ background: '#1a1400', border: '1px solid #b45309', borderRadius: '0.5rem', padding: '0.5rem 0.625rem' }}>
             <span style={{ color: '#fcd34d', fontWeight: 700, fontSize: '0.8rem' }}>Sucati</span>
-            <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — antes de subir, convertí el archivo .xls con el conversor de abajo. Después subí el archivo descargado como pedido normal</span>
+            <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}> — abrí el .xls en Excel, guardalo como .xlsx (Archivo → Guardar como → Excel) y subí el .xlsx</span>
           </div>
-        </div>
-        <div style={{ borderTop: '1px solid #2a2d3e', paddingTop: '0.625rem' }}>
-          <p style={{ color: '#fcd34d', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.375rem' }}>📦 Conversor Sucati</p>
-          {!xlsxListo ? (
-            <label style={{ display: 'block', background: '#1a1d27', border: '1px dashed #b45309', borderRadius: '0.5rem', padding: '0.625rem', textAlign: 'center', cursor: convirtiendo ? 'not-allowed' : 'pointer', color: '#fcd34d', fontSize: '0.8rem' }}>
-              {convirtiendo ? '⏳ Convirtiendo...' : '📂 Seleccionar .xls de Sucati para convertir'}
-              <input type="file" accept=".xls" disabled={convirtiendo} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) convertirXLS(e.target.files[0]) }} />
-            </label>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <a href={xlsxUrl} download={xlsxNombreState}
-                style={{ flex: 1, display: 'block', background: '#052e16', border: '1px solid #15803d', borderRadius: '0.5rem', padding: '0.5rem 0.75rem', textAlign: 'center', color: '#4ade80', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'none' }}>
-                ⬇️ Descargar {xlsxNombreState}
-              </a>
-              <button onClick={() => { setXlsxListo(false); setXlsxUrl(null); _xlsxBuffer = null }}
-                style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
-            </div>
-          )}
         </div>
       </div>
 
