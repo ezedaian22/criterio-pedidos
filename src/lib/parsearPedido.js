@@ -122,27 +122,33 @@ function parsearNotaPedidoGR(items) {
 }
 
 function parsearDistribucionGR(items) {
+  // DEBUG: mostrar items con dígitos y guión, con códigos de carácter exactos
+  console.log('DIST DEBUG total items:', items.length)
+  items.filter(function(i){ return /\d{5}/.test(i.text) }).slice(0, 20).forEach(function(i){
+    var chars = i.text.split('').map(function(ch){ return ch.charCodeAt(0) }).join(',')
+    console.log('DIST ITEM x=' + i.x + ' text=' + JSON.stringify(i.text) + ' codes=[' + chars + ']')
+  })
+
   // PDF.js a veces pega el código-talle con el código nuestro en un solo item:
-  // "50789-004 128" en vez de "50789-004". Normalizamos: si un item empieza con
-  // NNNNN-NNN, lo separamos en el código (para codigosItems) y el resto queda disponible.
+  // "50789-004 128" en vez de "50789-004". Normalizamos: contemplar guiones unicode y nbsp.
   var itemsNorm = []
   items.forEach(function(i) {
-    var m = i.text.match(/^(\d{5}-\d{3})\s+(\d{1,4})\b/)
+    var m = i.text.match(/^(\d{5}[-\u2010\u2011\u2012\u2013\u2014]\d{3})[\s\u00a0]+(\d{1,4})\b/)
     if (m) {
-      // Separar en dos items virtuales: el código-talle y el código nuestro
-      itemsNorm.push({ x: i.x, y: i.y, text: m[1], page: i.page })
+      var codLimpio = m[1].replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
+      itemsNorm.push({ x: i.x, y: i.y, text: codLimpio, page: i.page })
       itemsNorm.push({ x: i.x + 55, y: i.y, text: m[2], page: i.page, _codNuestro: true })
     } else {
       itemsNorm.push(i)
     }
   })
-  // Mostrar los items que tienen guión para ver el formato exacto
   items = itemsNorm
 
   // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
   var codigosItems = items.filter(function(i) {
     return /^\d{5}-\d{3}$/.test(i.text)
   })
+  console.log('DIST DEBUG códigos detectados tras normalizar:', codigosItems.length)
   if (codigosItems.length === 0) return null
 
   // El Y de los codigos nos da las filas de distribucion
