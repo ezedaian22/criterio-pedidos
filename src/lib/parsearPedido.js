@@ -24,7 +24,8 @@ async function extraerItemsPDF(base64) {
           todosItems.push({
             x: Math.round(item.transform[4]),
             y: Math.round(item.transform[5]),
-            text: item.str.trim()
+            text: item.str.trim(),
+            page: p
           })
         }
       })
@@ -34,123 +35,88 @@ async function extraerItemsPDF(base64) {
 }
 
 function parsearNotaPedidoGR(items) {
-  // Parser para pedidos GR SIN hoja de distribución
-  // Coordenadas PDF.js: Y crece hacia ARRIBA, items NO están ordenados por Y
-  // Estrategia: agrupar por Y (redondeado), luego procesar cada fila
-
+  // Parser GR sin distribución — procesa CADA PÁGINA por separado para evitar mezclas
+  // Cada página tiene exactamente UN artículo por fila
   var xCodProv = 75, xArt = 135, xTalle = 188, xCant = 415, xDesc1 = 195, xDesc2 = 400, xPrecio = 464
   var TOL_X = 20
 
-  // Agrupar items por Y (redondeado a múltiplos de 4, igual que parsearDistribucionGR)
-  var porY = {}
+  // Agrupar items por página
+  var porPagina = {}
   items.forEach(function(item) {
-    var yKey = Math.round(item.y / 4) * 4
-    if (!porY[yKey]) porY[yKey] = []
-    porY[yKey].push(item)
+    var pg = item.page || 1
+    if (!porPagina[pg]) porPagina[pg] = []
+    porPagina[pg].push(item)
   })
 
   var articulosMap = {}
   var articulosOrden = []
-  var procesados = {}
 
-  Object.keys(porY).forEach(function(yKey) {
-    var fila = porY[yKey].slice().sort(function(a,b){ return a.x - b.x })
+  // Procesar cada página por separado
+  Object.keys(porPagina).forEach(function(pg) {
+    var pageItems = porPagina[pg]
 
-    // Verificar que la fila tiene cantidad en x~415
-    var cantItems = fila.filter(function(i) {
-      return /^\d+$/.test(i.text) && Math.abs(i.x - xCant) <= TOL_X
+    // Agrupar por Y dentro de esta página
+    var porY = {}
+    pageItems.forEach(function(item) {
+      var yKey = Math.round(item.y / 4) * 4
+      if (!porY[yKey]) porY[yKey] = []
+      porY[yKey].push(item)
     })
-    if (cantItems.length === 0) return
 
-    // Tomar solo cantidades válidas (no 60 de "60 días", no >9999)
-    cantItems = cantItems.filter(function(i) {
-      var n = parseInt(i.text)
-      return n > 0 && n < 9999 && n !== 60
-    })
-    if (cantItems.length === 0) return
+    Object.keys(porY).forEach(function(yKey) {
+      var fila = porY[yKey].slice().sort(function(a,b){ return a.x - b.x })
 
-    // Buscar código nuestro (1-4 dígitos en x~75)
-    var codNuestroItems = fila.filter(function(i) {
-      return /^\d{1,4}$/.test(i.text) && Math.abs(i.x - xCodProv) <= TOL_X
-    })
-    if (codNuestroItems.length === 0) return
+      // Dentro de una página, solo 1 artículo por fila
+      var codItems = fila.filter(function(i){ return /^\d{1,4}$/.test(i.text) && Math.abs(i.x - xCodProv) <= TOL_X })
+      var talleItems = fila.filter(function(i){ return /^\d{1,2}$/.test(i.text) && Math.abs(i.x - xTalle) <= TOL_X })
+      var cantItems = fila.filter(function(i){
+        if (!/^\d+$/.test(i.text)) return false
+        if (Math.abs(i.x - xCant) > TOL_X) return false
+        var n = parseInt(i.text); return n > 0 && n < 9999 && n !== 60
+      })
+      var precioItems = fila.filter(function(i){ return Math.abs(i.x - xPrecio) <= 20 && /[\d.,]+/.test(i.text) })
+      var artItems = fila.filter(function(i){ return /^\d{5}$/.test(i.text) && Math.abs(i.x - xArt) <= TOL_X })
 
-    // Buscar código cliente (5 dígitos en x~135)
-    var codClienteItems = fila.filter(function(i) {
-      return /^\d{5}$/.test(i.text) && Math.abs(i.x - xArt) <= TOL_X
-    })
-    if (codClienteItems.length === 0) return
+      if (!cantItems.length || !codItems.length || !talleItems.length) return
 
-    // Buscar talle (1-2 dígitos en x~188)
-    var talleItems = fila.filter(function(i) {
-      return /^\d{1,2}$/.test(i.text) && Math.abs(i.x - xTalle) <= TOL_X
-    })
-    if (talleItems.length === 0) return
-
-    // Cuando hay dos conjuntos (dos páginas en misma Y), tomar el de menor X para cada campo
-    var codNuestroItem = codNuestroItems.reduce(function(a,b){ return a.x < b.x ? a : b })
-    var codClienteItem = codClienteItems.reduce(function(a,b){ return Math.abs(a.x-xArt) < Math.abs(b.x-xArt) ? a : b })
-    var talleItem = talleItems.reduce(function(a,b){ return Math.abs(a.x-xTalle) < Math.abs(b.x-xTalle) ? a : b })
-    var cantItem = cantItems[0]  // primera en orden de X
-
-    var codNuestro = codNuestroItem.text
-    var codCliente = codClienteItem.text
-    var talle = String(parseInt(talleItem.text))
-    var cantidad = parseInt(cantItem.text)
-
-    // Evitar duplicados (misma Y puede tener dos artículos de distintas páginas)
-    var key = codNuestro + '_' + talle
-    if (procesados[key]) return
-    procesados[key] = true
-
-    // Descripción: textos entre xDesc1 y xDesc2, dedup por X
-    var descItems = fila.filter(function(i) {
-      return /[A-Za-záéíóúÁÉÍÓÚñÑ/]/.test(i.text) && i.x >= xDesc1 && i.x <= xDesc2
-    })
-    var seenX = {}
-    var dedupDesc = []
-    descItems.forEach(function(di) {
-      var xk = Math.round(di.x / 5) * 5
-      if (!seenX[xk]) { seenX[xk] = true; dedupDesc.push(di.text) }
-    })
-    var descripcion = dedupDesc.join(' ')
-
-    // Precio: primer número en x~464
-    var precioItems = fila.filter(function(i) {
-      return Math.abs(i.x - xPrecio) <= 20 && /[\d.,]+/.test(i.text)
-    })
-    var precio = 0
-    if (precioItems.length > 0) {
-      try { precio = Math.round(parseFloat(precioItems[0].text.replace(/\./g,'').replace(',','.'))) } catch(e) {}
-    }
-
-    if (!articulosMap[codNuestro]) {
-      articulosMap[codNuestro] = {
-        codigo_nuestro: codNuestro,
-        codigo_cliente: codCliente,
-        descripcion_cliente: descripcion,
-        precio_unitario: precio,
-        talles_articulo: [],
-        sucursales: {},
-        total_unidades: 0,
-        modulos: [],
-        variantes: []
+      var codNuestro = codItems[0].text
+      var codCliente = artItems.length ? artItems[0].text : codNuestro
+      var talle = String(parseInt(talleItems[0].text))
+      var cantidad = parseInt(cantItems[0].text)
+      var precio = 0
+      if (precioItems.length) {
+        try { precio = Math.round(parseFloat(precioItems[0].text.replace(/\./g,'').replace(',','.'))) } catch(e) {}
       }
-      articulosOrden.push(codNuestro)
-    }
 
-    var art = articulosMap[codNuestro]
-    if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
+      // Descripción
+      var descItems = fila.filter(function(i){ return /[A-Za-záéíóúÁÉÍÓÚñÑ/]/.test(i.text) && i.x >= xDesc1 && i.x <= xDesc2 })
+      var descripcion = descItems.map(function(i){ return i.text }).join(' ')
 
-    if (!art.sucursales['talles']) {
-      art.sucursales['talles'] = { nro_sucursal: 'talles', cantidad: 0, talles: {}, es_por_talle: true }
-    }
-    art.sucursales['talles'].talles[talle] = cantidad
-    art.sucursales['talles'].cantidad += cantidad
-    art.total_unidades += cantidad
+      if (!articulosMap[codNuestro]) {
+        articulosMap[codNuestro] = {
+          codigo_nuestro: codNuestro,
+          codigo_cliente: codCliente,
+          descripcion_cliente: descripcion,
+          precio_unitario: precio,
+          talles_articulo: [],
+          sucursales: { talles: { nro_sucursal: 'talles', cantidad: 0, talles: {}, es_por_talle: true } },
+          total_unidades: 0,
+          modulos: [],
+          variantes: []
+        }
+        articulosOrden.push(codNuestro)
+      }
+
+      var art = articulosMap[codNuestro]
+      if (art.sucursales.talles.talles[talle]) return  // talle ya procesado
+      if (art.talles_articulo.indexOf(talle) === -1) art.talles_articulo.push(talle)
+      art.sucursales.talles.talles[talle] = cantidad
+      art.sucursales.talles.cantidad += cantidad
+      art.total_unidades += cantidad
+    })
   })
 
-  if (Object.keys(articulosMap).length === 0) return null
+  if (!Object.keys(articulosMap).length) return null
 
   var resultado = articulosOrden.map(function(cod) {
     var art = articulosMap[cod]
