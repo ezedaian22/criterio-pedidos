@@ -1013,18 +1013,8 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   if (esPDF) {
     items = await extraerItemsPDF(base64)
     if (items) textoPDF = items.map(function(i) { return i.text }).join(' ')
-    // DEBUG TEMPORAL: descargar los items exactos como archivo .json
-    try {
-      var blob = new Blob([JSON.stringify(items)], { type: 'application/json' })
-      var url = URL.createObjectURL(blob)
-      var a = document.createElement('a')
-      a.href = url
-      a.download = 'items_reales.json'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch(e) {}
+    // DEBUG: exponer items reales en window para inspección
+    try { if (typeof window !== 'undefined') window._itemsReales = items } catch(e) {}
   }
 
   // Detectar si es GR por texto
