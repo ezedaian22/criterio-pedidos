@@ -122,21 +122,32 @@ function parsearNotaPedidoGR(items) {
 }
 
 function parsearDistribucionGR(items) {
+  // PDF.js a veces pega el código-talle con el código nuestro en un solo item:
+  // "50789-004 128" en vez de "50789-004". Normalizamos: si un item empieza con
+  // NNNNN-NNN, lo separamos en el código (para codigosItems) y el resto queda disponible.
+  var itemsNorm = []
+  items.forEach(function(i) {
+    var m = i.text.match(/^(\d{5}-\d{3})\s+(\d{1,4})\b/)
+    if (m) {
+      // Separar en dos items virtuales: el código-talle y el código nuestro
+      itemsNorm.push({ x: i.x, y: i.y, text: m[1], page: i.page })
+      itemsNorm.push({ x: i.x + 55, y: i.y, text: m[2], page: i.page, _codNuestro: true })
+    } else {
+      itemsNorm.push(i)
+    }
+  })
+  items = itemsNorm
+
   // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
   var codigosItems = items.filter(function(i) {
     return /^\d{5}-\d{3}$/.test(i.text)
   })
-  console.log('DIST DEBUG: códigos NNNNN-NNN encontrados:', codigosItems.length)
-  // Debug: mostrar items que contienen 5 dígitos seguidos (para ver cómo PDF.js parte el código)
-  var conCincoDigitos = items.filter(function(i){ return /\d{5}/.test(i.text) }).slice(0, 15)
-  console.log('DIST DEBUG: items con 5+ dígitos:', conCincoDigitos.map(function(i){ return JSON.stringify(i.text) }))
   if (codigosItems.length === 0) return null
 
   // El Y de los codigos nos da las filas de distribucion
   var ysFilas = codigosItems.map(function(i) { return i.y })
   var yMin = Math.min.apply(null, ysFilas)
   var yMax = Math.max.apply(null, ysFilas)
-  console.log('DIST DEBUG: yMin=', yMin, 'yMax=', yMax)
 
   // Buscar fila de encabezado: numeros de 2 digitos arriba de los codigos
   // En el PDF los Y crecen hacia arriba, entonces el encabezado tiene Y > yMax
@@ -182,7 +193,6 @@ function parsearDistribucionGR(items) {
     })
   }
 
-  console.log('DIST DEBUG: encItems (encabezado sucursales):', encItems.length, encItems.map(function(i){ return i.text }))
   if (encItems.length === 0) return null
 
   // Ordenar encabezado por X
@@ -276,7 +286,6 @@ function parsearDistribucionGR(items) {
     return art
   })
 
-  console.log('DIST DEBUG: resultado:', resultado.length, resultado.map(function(a){ return a.codigo_nuestro + '/' + a.sucursales.length + 'sucs' }))
   return resultado.length > 0 ? resultado : null
 }
 
@@ -975,11 +984,9 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   if (esGR && items) {
     // Primero intentar distribución por sucursal
     var articulosGR = parsearDistribucionGR(items)
-    console.log('GR DEBUG: parsearDistribucionGR devolvió', articulosGR ? articulosGR.length + ' artículos' : 'null', articulosGR ? articulosGR.map(function(a){ return a.codigo_nuestro + '(' + (a.sucursales ? a.sucursales.length : 0) + ' sucs)' }) : '')
     // Si no hay distribución, intentar por talle
     if (!articulosGR || articulosGR.length === 0) {
       articulosGR = parsearNotaPedidoGR(items)
-      console.log('GR DEBUG: cayó a parsearNotaPedidoGR →', articulosGR ? articulosGR.length + ' artículos' : 'null')
     }
     if (articulosGR && articulosGR.length > 0) {
       var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
