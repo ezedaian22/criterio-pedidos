@@ -1080,28 +1080,24 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   }
 
   if (esGR && items) {
-    // Intentar ambos parsers y quedarse con el que devuelva más artículos
-    var articulosGRDist = parsearDistribucionGR(items)
-    var articulosGRTalle = parsearNotaPedidoGR(items)
+    // Detectar si el PDF tiene hoja de distribución por sucursal
+    var tieneDistribucion = textoPDF && textoPDF.toLowerCase().includes('distribuc')
     
-    // Elegir el mejor resultado
     var articulosGR = null
-    var esPorTalle = false
-    if (articulosGRDist && articulosGRTalle) {
-      // Preferir distribución si tiene más sucursales reales (>1 por artículo)
-      var distTieneSucs = articulosGRDist.some(function(a){ return a.sucursales && a.sucursales.length > 1 })
-      if (distTieneSucs) {
-        articulosGR = articulosGRDist
-      } else {
-        // Distribución detectó algo pero sin sucursales reales — usar por talle
-        articulosGR = articulosGRTalle.length >= articulosGRDist.length ? articulosGRTalle : articulosGRDist
-        esPorTalle = articulosGR === articulosGRTalle
+    if (tieneDistribucion) {
+      // Pedido CON distribución por sucursal → usar parser de distribución
+      articulosGR = parsearDistribucionGR(items)
+    }
+    
+    if (!articulosGR || articulosGR.length === 0) {
+      // Sin distribución (o falló) → leer nota de pedido por talle
+      var articulosGRTalle = parsearNotaPedidoGR(items)
+      if (articulosGRTalle && articulosGRTalle.length > 0) {
+        articulosGR = articulosGRTalle
+      } else if (!tieneDistribucion) {
+        // Último intento: distribución igual
+        articulosGR = parsearDistribucionGR(items)
       }
-    } else if (articulosGRDist) {
-      articulosGR = articulosGRDist
-    } else if (articulosGRTalle) {
-      articulosGR = articulosGRTalle
-      esPorTalle = true
     }
     
     if (articulosGR && articulosGR.length > 0) {
