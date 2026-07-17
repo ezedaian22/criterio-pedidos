@@ -147,21 +147,43 @@ function parsearDistribucionGR(items) {
   })
   items = itemsNorm
 
+  // PDF.js puede pegar varios números en un solo item, ej: "3 3 3 2 7 3 3 6 30"
+  // (cantidades de una fila) o "01 04 06 10 11 13 14 15 17 TOTAL" (encabezado).
+  // Separamos esos items en items virtuales, uno por número, estimando su X.
+  var itemsExpandido = []
+  items.forEach(function(i) {
+    // No expandir items que ya son código-talle (NNNNN-NNN) ni que tienen guión
+    if (/\d{5}-\d{3}/.test(i.text) || i._codNuestro) {
+      itemsExpandido.push(i)
+      return
+    }
+    // ¿El texto son varios tokens y al menos 3 son números de 2 dígitos o cantidades? → separar
+    var tokens = i.text.trim().split(/\s+/)
+    var numTokens = tokens.filter(function(t){ return /^\d{1,4}$/.test(t) })
+    if (tokens.length >= 3 && numTokens.length >= 3 && numTokens.length >= tokens.length - 1) {
+      var anchoAprox = 34
+      tokens.forEach(function(t, idx) {
+        itemsExpandido.push({ x: i.x + idx * anchoAprox, y: i.y, text: t, page: i.page })
+      })
+    } else {
+      itemsExpandido.push(i)
+    }
+  })
+  items = itemsExpandido
+
   // Encontrar todos los items con formato NNNNN-NNN (codigo_cliente-talle)
   var codigosItems = items.filter(function(i) {
     return /^\d{5}-\d{3}$/.test(i.text)
   })
   if (codigosItems.length === 0) return null
 
-  // Detección del encabezado de sucursales — INDEPENDIENTE de X y de Y.
-  // El encabezado es la fila (grupo con misma Y) que tiene MÁS números de 2 dígitos.
-  // Los números de sucursal (01,04,06...) están todos alineados en una sola fila;
-  // ninguna otra fila del PDF tiene tantos números de 2 dígitos juntos.
-  // NO filtramos por X (las columnas pueden estar en cualquier posición según el PDF).
+  // Detección del encabezado de sucursales.
+  // La fila de encabezado es la que tiene MÁS números de 2 dígitos alineados en Y.
+  // Los números de sucursal (01,04,06...) son 2 dígitos. La palabra "TOTAL" está en esa
+  // misma fila pero NO es número, así que no entra. Robusto a X y a orientación Y.
   var candidatosEnc = items.filter(function(i) {
     return /^\d{2}$/.test(i.text)
   })
-  // Agrupar por Y (redondeada) y quedarse con el grupo más grande
   var gruposPorY = {}
   candidatosEnc.forEach(function(i) {
     var y = Math.round(i.y / 4) * 4
@@ -170,7 +192,6 @@ function parsearDistribucionGR(items) {
   })
   var encItems = []
   Object.keys(gruposPorY).forEach(function(y) {
-    // Deduplicar por X dentro del grupo (dos páginas pueden solapar)
     var grupo = gruposPorY[y]
     var xVistas = {}
     var unicos = []
@@ -189,6 +210,19 @@ function parsearDistribucionGR(items) {
   var sucursales = encItems.map(function(i) { return i.text })
   var xCols = encItems.map(function(i) { return i.x })
 
+  // Detectar la X de la columna TOTAL para EXCLUIRLA al leer cantidades.
+  // TOTAL está a la derecha de la última sucursal. Buscar la palabra "TOTAL" o el item
+  // numérico más a la derecha que esté después de la última columna de sucursal.
+  var xUltimaSuc = xCols[xCols.length - 1]
+  var xTotal = null
+  items.forEach(function(i) {
+    if (/total/i.test(i.text) && i.x > xUltimaSuc - 20) {
+      if (xTotal === null || i.x < xTotal) xTotal = i.x
+    }
+  })
+  // Si no hay palabra TOTAL, asumir que la columna total está ~35px después de la última suc
+  if (xTotal === null) xTotal = xUltimaSuc + 35
+
   // Parsear cada fila de codigo-talle
   var articulos = {}
 
@@ -201,10 +235,10 @@ function parsearDistribucionGR(items) {
     var yFila = codItem.y
     var pageFila = codItem.page
 
-    // Todos los items en la misma fila (tolerancia ±4px) Y en la misma página
-    // (dos páginas pueden superponerse en el mismo Y — filtrar por página evita mezclar artículos)
+    // Items en la misma fila. Las cantidades pueden estar en un Y levemente distinto
+    // al del código (ej: código y=500, cantidades y=496). Tolerancia amplia (±10px).
     var filaItems = items.filter(function(i) {
-      return Math.abs(i.y - yFila) <= 4 && i.page === pageFila
+      return Math.abs(i.y - yFila) <= 10 && i.page === pageFila
     }).sort(function(a, b) { return a.x - b.x })
 
     // codigo_nuestro: primer numero de 1-4 digitos con X > X del codigo cliente
@@ -212,7 +246,8 @@ function parsearDistribucionGR(items) {
     var descTextos = []
     filaItems.forEach(function(fi) {
       if (fi.text === codItem.text) return
-      if (!codNuestro && /^\d{1,4}$/.test(fi.text) && fi.x > codItem.x) {
+      if (fi._codNuestro && !codNuestro) { codNuestro = fi.text; return }
+      if (!codNuestro && /^\d{1,4}$/.test(fi.text) && fi.x > codItem.x && fi.x < xCols[0] - 20) {
         codNuestro = fi.text
       } else if (codNuestro && /[A-Za-z]/.test(fi.text)) {
         descTextos.push(fi.text)
@@ -221,24 +256,40 @@ function parsearDistribucionGR(items) {
 
     if (!codNuestro) return
 
-    // Para cada columna de sucursal, encontrar el número más cercano en X
+    // Leer cantidades: cada número de la fila se alinea con la columna de sucursal
+    // MÁS CERCANA en X. El número que quede más allá de la última sucursal es el TOTAL → se ignora.
+    var xPrimeraCol = xCols[0]
+    var xUltimaCol = xCols[xCols.length - 1]
+    var numsFila = filaItems.filter(function(fi) {
+      return /^\d+$/.test(fi.text) &&
+             fi.x >= xPrimeraCol - 25 &&
+             fi !== codItem &&
+             !fi._codNuestro &&
+             fi.text !== codNuestro
+    }).sort(function(a, b) { return a.x - b.x })
+
+    // Deduplicar por X
+    var numsUnicos = []
+    var xNum = {}
+    numsFila.forEach(function(fi) {
+      var xk = Math.round(fi.x / 8) * 8
+      if (!xNum[xk]) { xNum[xk] = true; numsUnicos.push(fi) }
+    })
+
     var cantidades = {}
-    xCols.forEach(function(xCol, idx) {
-      var suc = sucursales[idx]
-      // Buscar número en la fila con X cercano a la columna (tolerancia ±15px)
-      var candidatos = filaItems.filter(function(fi) {
-        return /^\d+$/.test(fi.text) &&
-               Math.abs(fi.x - xCol) <= 15 &&
-               fi.text !== codNuestro &&
-               fi.text !== codItem.text
+    numsUnicos.forEach(function(fi) {
+      // Si está claramente más a la derecha que la última sucursal, es el TOTAL → ignorar
+      if (fi.x > xUltimaCol + 18) return
+      // Buscar la columna de sucursal más cercana en X
+      var mejorIdx = -1
+      var mejorDist = 999
+      xCols.forEach(function(xCol, idx) {
+        var dist = Math.abs(fi.x - xCol)
+        if (dist < mejorDist) { mejorDist = dist; mejorIdx = idx }
       })
-      if (candidatos.length > 0) {
-        // Tomar el más cercano al X de la columna
-        candidatos.sort(function(a, b) {
-          return Math.abs(a.x - xCol) - Math.abs(b.x - xCol)
-        })
-        var cant = parseInt(candidatos[0].text)
-        if (cant > 0) cantidades[suc] = cant
+      if (mejorIdx >= 0 && mejorDist <= 20) {
+        var cant = parseInt(fi.text)
+        if (cant > 0) cantidades[sucursales[mejorIdx]] = cant
       }
     })
 
