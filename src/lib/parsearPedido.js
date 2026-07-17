@@ -725,7 +725,9 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               // y leer las imágenes medianas (100KB-500KB) de esa hoja en orden desc tamaño
               var procesarVariantesHoja = async function(cod) {
                 var art = articulos[cod]
-                var variantesSinImg = art.variantes.filter(function(v) { return !v.imagen_url && !v.es_estampa })
+                // Solo asignar imágenes a variantes que NO son colores lisos (Jet Black, Chocolate, etc.)
+              // Las variantes con foto en Excel son diseños de tela (VAR 1, VAR 2) o estampas
+              var variantesSinImg = art.variantes.filter(function(v) { return !v.imagen_url && !v.es_estampa && /^var\s/i.test(v.nombre) })
                 if (variantesSinImg.length === 0) return
                 // Hoja de material = hoja que mapea a este código y no es la hoja de código exacto
                 var hojasMat = wb.SheetNames.filter(function(s) {
