@@ -127,6 +127,9 @@ function parsearDistribucionGR(items) {
     return /^\d{5}-\d{3}$/.test(i.text)
   })
   console.log('DIST DEBUG: códigos NNNNN-NNN encontrados:', codigosItems.length)
+  // Debug: mostrar items que contienen 5 dígitos seguidos (para ver cómo PDF.js parte el código)
+  var conCincoDigitos = items.filter(function(i){ return /\d{5}/.test(i.text) }).slice(0, 15)
+  console.log('DIST DEBUG: items con 5+ dígitos:', conCincoDigitos.map(function(i){ return JSON.stringify(i.text) }))
   if (codigosItems.length === 0) return null
 
   // El Y de los codigos nos da las filas de distribucion
