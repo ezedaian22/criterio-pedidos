@@ -1117,8 +1117,30 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
   }
 
   if (esGR && items) {
-    // Intentar parser con distribución por sucursal
-    var articulosGR = parsearDistribucionGR(items)
+    // Intentar ambos parsers y quedarse con el que devuelva más artículos
+    var articulosGRDist = parsearDistribucionGR(items)
+    var articulosGRTalle = parsearNotaPedidoGR(items)
+    
+    // Elegir el mejor resultado
+    var articulosGR = null
+    var esPorTalle = false
+    if (articulosGRDist && articulosGRTalle) {
+      // Preferir distribución si tiene más sucursales reales (>1 por artículo)
+      var distTieneSucs = articulosGRDist.some(function(a){ return a.sucursales && a.sucursales.length > 1 })
+      if (distTieneSucs) {
+        articulosGR = articulosGRDist
+      } else {
+        // Distribución detectó algo pero sin sucursales reales — usar por talle
+        articulosGR = articulosGRTalle.length >= articulosGRDist.length ? articulosGRTalle : articulosGRDist
+        esPorTalle = articulosGR === articulosGRTalle
+      }
+    } else if (articulosGRDist) {
+      articulosGR = articulosGRDist
+    } else if (articulosGRTalle) {
+      articulosGR = articulosGRTalle
+      esPorTalle = true
+    }
+    
     if (articulosGR && articulosGR.length > 0) {
       var meta = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
       return {
@@ -1127,18 +1149,6 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
         fecha_pedido: meta.fecha_pedido,
         fecha_entrega: meta.fecha_entrega,
         articulos: articulosGR
-      }
-    }
-    // Fallback: pedido sin distribución — leer nota de pedido por talle
-    var articulosGRTalle = parsearNotaPedidoGR(items)
-    if (articulosGRTalle && articulosGRTalle.length > 0) {
-      var metaT = await llamarIA(apiKey, base64, mimeType, textoPDF, true)
-      return {
-        cliente_detectado: 'Garcia Reguera',
-        numero_pedido: metaT.numero_pedido,
-        fecha_pedido: metaT.fecha_pedido,
-        fecha_entrega: metaT.fecha_entrega,
-        articulos: articulosGRTalle
       }
     }
   }
