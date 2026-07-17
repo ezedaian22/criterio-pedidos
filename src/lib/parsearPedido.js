@@ -131,6 +131,30 @@ function parsearNotaPedidoGR(items) {
   return resultado.length > 0 ? resultado : null
 }
 
+function extraerPreciosGR(items) {
+  // Los GR con distribución traen el precio en la página "NOTA DE PEDIDO" (no en la grilla).
+  // Misma fila: código (x 60-95, 2-4 díg) + precio en formato AR (x 445-478, "6.991,73").
+  // No depende del talle → robusto a diferencias PDF.js / pdfplumber.
+  var precioRe = /^\d{1,3}(?:\.\d{3})*,\d{2}$/
+  var codRe = /^\d{1,4}$/
+  var mapa = {}
+  var filas = {}
+  items.forEach(function(i) {
+    var k = (i.page || 1) + ':' + (Math.round(i.y / 4) * 4)
+    if (!filas[k]) filas[k] = []
+    filas[k].push(i)
+  })
+  Object.keys(filas).forEach(function(k) {
+    var fila = filas[k]
+    var cod = fila.find(function(i) { return i.x >= 60 && i.x <= 95 && codRe.test(i.text) })
+    var pre = fila.find(function(i) { return i.x >= 445 && i.x <= 478 && precioRe.test(i.text) })
+    if (!cod || !pre) return
+    var val = Math.round(parseFloat(pre.text.replace(/\./g, '').replace(',', '.')))
+    if (val > 0 && mapa[cod.text] === undefined) mapa[cod.text] = val
+  })
+  return mapa
+}
+
 function parsearDistribucionGR(items) {
   // Normalizar: PDF.js pega "50789-004 128" (codigo-talle + codigo nuestro) en un item.
   var codRe = /^(\d{5})[-\u2010\u2011\u2012\u2013\u2014](\d{3})\s+(\d{1,4})$/
@@ -268,6 +292,13 @@ function parsearDistribucionGR(items) {
       .sort(function(a, b) { return Number(a.nro_sucursal) - Number(b.nro_sucursal) })
     return art
   }).filter(function(art) { return art.sucursales.length > 0 })
+
+  // Precio: sacarlo de la página nota-de-pedido y asignarlo por código (GR distribución no lo trae en la grilla)
+  var preciosGR = extraerPreciosGR(items)
+  resultado.forEach(function(art) {
+    if (preciosGR[art.codigo_nuestro] !== undefined) art.precio_unitario = preciosGR[art.codigo_nuestro]
+    else if (preciosGR[art.codigo_cliente] !== undefined) art.precio_unitario = preciosGR[art.codigo_cliente]
+  })
 
   return resultado.length > 0 ? resultado : null
 }
