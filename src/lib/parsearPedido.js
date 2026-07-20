@@ -713,15 +713,29 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           if (mMod) { artActual = mMod[1]; continue }
 
           if (artActual && articulos[artActual]) {
-            var primerVal = row.find(function(v) { return v !== null && v !== '' })
-            if (!primerVal) { artActual = null; continue }
+            // El bloque de módulos vive en las columnas A..O. A la derecha (col ~V) está el
+            // texto "CONDICIONES DEL PEDIDO", que no es parte del módulo → se ignora.
+            var COL_MODULO_MAX = 15
+            var idxNombre = -1
+            for (var ixn = 0; ixn < row.length && ixn < COL_MODULO_MAX; ixn++) {
+              if (row[ixn] !== null && row[ixn] !== undefined && String(row[ixn]).trim() !== '') { idxNombre = ixn; break }
+            }
+            var primerVal = idxNombre >= 0 ? row[idxNombre] : null
+            if (!primerVal) {
+              // Fila con contenido SOLO en la columna de condiciones: no corta el módulo
+              var hayAlgoFuera = row.some(function(v) { return v !== null && v !== undefined && String(v).trim() !== '' })
+              if (hayAlgoFuera) continue
+              artActual = null; continue
+            }
             var nombre = String(primerVal).trim()
             if (/^\d+$/.test(nombre)) continue
             var ignorar = ['modulo','cantidad','curva','entrega','observ','total','revisar','horario','facturar','proveedor','tel','condic','mail']
             if (!nombre || ignorar.some(function(w){ return nombre.toLowerCase().includes(w) })) { artActual = null; continue }
 
+            // La cantidad se busca DESPUÉS del nombre (si no, "VAR 1" o "DNS 6012" aporta sus propios dígitos)
             var cantVar = 0
-            for (var j = 1; j < row.length; j++) {
+            var jMax = Math.min(row.length, COL_MODULO_MAX)
+            for (var j = idxNombre + 1; j < jMax; j++) {
               if (!row[j]) continue
               var numStr = String(row[j]).replace(/[^0-9]/g, '')
               if (numStr && parseInt(numStr) > 0) { cantVar = parseInt(numStr); break }
