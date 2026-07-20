@@ -11,6 +11,9 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [confirmarEliminar, setConfirmarEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
 
+  // Solo gerencia puede eliminar pedidos
+  const esGerencia = session?.rol === 'gerencia'
+
   useEffect(() => { cargarPedidos() }, [])
 
   async function cargarPedidos() {
@@ -27,6 +30,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   }
 
   async function eliminarPedido(pedido) {
+    if (!esGerencia) { setConfirmarEliminar(null); return }
     setEliminando(true)
     try {
       // Borrar en cascada: sucursales → variantes → módulos → artículos → pedido
@@ -154,11 +158,11 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {pedidosFiltrados.map(p => <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower} onEliminar={() => setConfirmarEliminar(p)} />)}
+          {pedidosFiltrados.map(p => <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower} onEliminar={() => setConfirmarEliminar(p)} puedeEliminar={esGerencia} />)}
         </div>
       )}
       {/* Modal confirmar eliminación */}
-      {confirmarEliminar && (
+      {confirmarEliminar && esGerencia && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
           <div style={{ background: '#1a1d27', border: '1px solid #b91c1c', borderRadius: '1rem', padding: '1.5rem', maxWidth: '22rem', width: '100%' }}>
             <h2 style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '0.5rem' }}>¿Eliminar pedido?</h2>
@@ -182,7 +186,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   )
 }
 
-function TarjetaPedido({ pedido, onClick, busqueda, onEliminar }) {
+function TarjetaPedido({ pedido, onClick, busqueda, onEliminar, puedeEliminar }) {
   const articulos = pedido.pedido_articulos || []
   const total = articulos.length
   const finalizados = articulos.filter(a => a.estado === 'finalizado').length
@@ -246,12 +250,14 @@ function TarjetaPedido({ pedido, onClick, busqueda, onEliminar }) {
         </div>
       )}
       </div>
-      {/* Botón eliminar */}
-      <button
-        onClick={e => { e.stopPropagation(); onEliminar() }}
-        style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', background: 'none', border: 'none', color: '#4b5563', cursor: 'pointer', fontSize: '1rem', padding: '0.25rem', lineHeight: 1, borderRadius: '0.25rem' }}
-        title="Eliminar pedido"
-      >🗑️</button>
+      {/* Botón eliminar — solo gerencia */}
+      {puedeEliminar && (
+        <button
+          onClick={e => { e.stopPropagation(); onEliminar() }}
+          style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', background: 'none', border: 'none', color: '#4b5563', cursor: 'pointer', fontSize: '1rem', padding: '0.25rem', lineHeight: 1, borderRadius: '0.25rem' }}
+          title="Eliminar pedido"
+        >🗑️</button>
+      )}
     </div>
   )
 }
