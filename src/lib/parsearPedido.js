@@ -462,6 +462,53 @@ function expandirRangoTalles(talleStr) {
   return talles
 }
 
+// ── Helpers de imágenes Sucati por hoja (relaciones internas del xlsx) ──
+async function zipText(zip, ruta) {
+  var f = zip.files[ruta]; return f ? await f.async('string') : null
+}
+async function mapaHojasZip(zip) {
+  var wbxml = await zipText(zip, 'xl/workbook.xml')
+  var rels = await zipText(zip, 'xl/_rels/workbook.xml.rels')
+  var mapa = {}; if (!wbxml || !rels) return mapa
+  var rid2t = {}, m
+  var relRe = /Id="(rId\d+)"[^>]*?Target="([^"]+)"/g
+  while ((m = relRe.exec(rels))) rid2t[m[1]] = m[2]
+  var shRe = /<sheet\b[^>]*?\/?>/g
+  while ((m = shRe.exec(wbxml))) {
+    var tag = m[0]
+    var nm = /name="([^"]+)"/.exec(tag), rid = /r:id="(rId\d+)"/.exec(tag)
+    if (nm && rid && rid2t[rid[1]]) {
+      var tgt = rid2t[rid[1]].replace(/^\/xl\//, '').replace(/^\//, '')
+      mapa[nm[1]] = tgt.indexOf('xl/') === 0 ? tgt : 'xl/' + tgt
+    }
+  }
+  return mapa
+}
+async function imagenesDeHoja(zip, wsPath) {
+  var base = wsPath.split('/').pop()
+  var wsRels = await zipText(zip, 'xl/worksheets/_rels/' + base + '.rels')
+  if (!wsRels) return []
+  var out = [], m
+  var draws = [], dr = /Target="([^"]*drawing\d+\.xml)"/g
+  while ((m = dr.exec(wsRels))) draws.push(m[1].split('/').pop())
+  for (var di = 0; di < draws.length; di++) {
+    var dfile = draws[di]
+    var dxml = await zipText(zip, 'xl/drawings/' + dfile)
+    var drels = await zipText(zip, 'xl/drawings/_rels/' + dfile + '.rels')
+    if (!dxml || !drels) continue
+    var e2m = {}, em, er = /Id="(rId\d+)"[^>]*?Target="([^"]*media\/[^"]+)"/g
+    while ((em = er.exec(drels))) e2m[em[1]] = em[2].split('/').pop()
+    var anchors = dxml.split(/<xdr:(?:oneCellAnchor|twoCellAnchor)/).slice(1)
+    anchors.forEach(function(a) {
+      var fr = /<xdr:from>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(a)
+      var eb = /r:embed="(rId\d+)"/.exec(a)
+      if (fr && eb && e2m[eb[1]]) out.push({ name: e2m[eb[1]], row: parseInt(fr[2]), col: parseInt(fr[1]) })
+    })
+  }
+  out.sort(function(x, y) { return x.row - y.row || x.col - y.col })
+  return out
+}
+
 async function parsearSucatiXLS(archivo, supabaseClient) {
   // Usar arrayBuffer() nativo en lugar de FileReader para mayor compatibilidad
   try {
@@ -681,7 +728,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             }
             if (nombre && cantVar > 0) {
               // Detectar si es estampa (DNS, VTE, estampa, etc.)
-              var esEstampa = /dns|vte|estampa|diseño|print/i.test(nombre)
+              var esEstampa = /dns|vte|estampa|diseño|print|var\s*\d/i.test(nombre)
               articulos[artActual].variantes.push({ nombre: nombre, cantidad: cantVar, imagen_url: null, es_estampa: esEstampa })
             }
           }
@@ -690,6 +737,76 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
         // Subir imágenes a Supabase Storage usando mediaFromZip (leído arriba via JSZip)
         if (supabaseClient && Object.keys(mediaFromZip).length > 0) {
           try {
+            // ── Split por tipo de pedido Sucati ──
+            // CON hoja "Modal Est" (ej. remeras): camino original, sin cambios.
+            // SIN "Modal Est" (ej. sacos/camperas): asignar imágenes por la hoja donde están.
+            var hayModalEst = wb.SheetNames.some(function(s) {
+              return s.toLowerCase().includes('modal est') || s.toLowerCase().includes('estampa')
+            })
+            if (!hayModalEst && zip) {
+              // ── SACOS/CAMPERAS: imágenes por HOJA vía relaciones internas (no por peso/orden) ──
+              var hojasMapS = await mapaHojasZip(zip)
+              var imgsCacheS = {}
+              async function imgsHojaS(nombre) {
+                if (imgsCacheS[nombre]) return imgsCacheS[nombre]
+                var wsPath = hojasMapS[nombre]
+                var lst = wsPath ? await imagenesDeHoja(zip, wsPath) : []
+                for (var ii = 0; ii < lst.length; ii++) {
+                  var mf = zip.files['xl/media/' + lst[ii].name]
+                  lst[ii].size = mf ? (await mf.async('arraybuffer')).byteLength : 0
+                }
+                imgsCacheS[nombre] = lst
+                return lst
+              }
+              async function subirImgS(nombre, prefijo, cod, tag) {
+                var mf = zip.files['xl/media/' + nombre]
+                if (!mf) return null
+                var buf = await mf.async('arraybuffer')
+                var ext = nombre.split('.').pop().toLowerCase()
+                var fileName = 'sucati/' + prefijo + '_' + cod + '_' + tag + '_' + Date.now() + '.' + ext
+                var blob = new Blob([buf], { type: 'image/' + ext })
+                var up = await supabaseClient.storage.from('pedidos-variantes').upload(fileName, blob, { contentType: 'image/' + ext, upsert: true })
+                if (up.error) return null
+                var url = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fileName)
+                return url.data ? url.data.publicUrl : null
+              }
+              for (var aiS = 0; aiS < articulosOrden.length; aiS++) {
+                var codS = articulosOrden[aiS]
+                var artS = articulos[codS]
+                // 1) Foto principal: imagen más grande de la hoja con nombre = código
+                var propiasS = await imgsHojaS(codS)
+                if (propiasS.length) {
+                  var mayorS = propiasS.slice().sort(function(a, b) { return b.size - a.size })[0]
+                  if (mayorS && mayorS.size > 10000) {
+                    var urlFotoS = await subirImgS(mayorS.name, 'art', codS, '0')
+                    if (urlFotoS) artS.imagen_url = urlFotoS
+                  }
+                }
+                // 2) Estampas: variantes es_estampa → hoja de material del artículo, en orden visual
+                var varsEstS = artS.variantes.filter(function(v) { return v.es_estampa })
+                if (varsEstS.length) {
+                  var hojaMatS = null
+                  var nombresHoja = Object.keys(hojasMapS)
+                  for (var hs = 0; hs < nombresHoja.length; hs++) {
+                    var sName = nombresHoja[hs]
+                    var sl = sName.toLowerCase()
+                    if (sl.indexOf('nota de pedido') !== -1) continue
+                    if (articulos[sName] || articulos[sName.trim()]) continue
+                    var palS = (artS.descripcion_cliente || '').toLowerCase().split(/\s+/).filter(function(w) { return w.length > 3 })
+                    var matchS = false
+                    for (var ps = 0; ps < palS.length; ps++) { if (sl.indexOf(palS[ps]) !== -1) { matchS = true; break } }
+                    if (matchS) { hojaMatS = sName; break }
+                  }
+                  if (hojaMatS) {
+                    var imgsMatS = (await imgsHojaS(hojaMatS)).filter(function(im) { return im.size >= 50000 })
+                    for (var viS = 0; viS < varsEstS.length && viS < imgsMatS.length; viS++) {
+                      var urlEstS = await subirImgS(imgsMatS[viS].name, 'estampa', codS, 'v' + viS)
+                      if (urlEstS) varsEstS[viS].imagen_url = urlEstS
+                    }
+                  }
+                }
+              }
+            } else {
             // Mapear hojas del XLS a códigos de artículo
             // Las hojas relevantes son las que tienen el código o el material
             // Orden de hojas: NOTA DE PEDIDO, NOTA DE PEDIDO original, Darlon, Plush, 2226, 2220
@@ -838,6 +955,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                 }
               } catch(e) { console.error('Error foto artículo:', e) }
             }
+            } // fin else (camino original con Modal Est)
           } catch(e) {
             console.error('Error imágenes:', e)
           }
