@@ -21,7 +21,16 @@ export default function App() {
     return <Login onLogin={setSession} />
   }
 
+  // Solo gerencia entra a Configuración
+  const esGerencia = session.rol === 'gerencia'
+
+  function cerrarSesion() {
+    import('./lib/auth').then(m => m.logout())
+    setSession(null)
+  }
+
   function irA(pag, data = null) {
+    if (pag === 'ajustes' && !esGerencia) return
     setPagina(pag)
     if (data) setPedidoSeleccionado(data)
   }
@@ -84,19 +93,38 @@ export default function App() {
           }}>
             {session.nombre.toUpperCase()}
           </div>
-          <button
-            onClick={() => irA('ajustes')}
-            style={{
-              color: '#7b9fff',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '1.2rem',
-              lineHeight: 1
-            }}
-          >
-            ⚙
-          </button>
+          {esGerencia ? (
+            <button
+              onClick={() => irA('ajustes')}
+              style={{
+                color: '#7b9fff',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '1.2rem',
+                lineHeight: 1
+              }}
+            >
+              ⚙
+            </button>
+          ) : (
+            <button
+              onClick={cerrarSesion}
+              style={{
+                color: '#7b9fff',
+                background: 'none',
+                border: '1px solid #3b5bdb',
+                borderRadius: '0.5rem',
+                padding: '0.25rem 0.6rem',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                lineHeight: 1.4
+              }}
+            >
+              Salir
+            </button>
+          )}
         </div>
       </header>
 
@@ -127,7 +155,7 @@ export default function App() {
             onVolver={() => irA('dashboard')}
           />
         )}
-        {pagina === 'ajustes' && (
+        {pagina === 'ajustes' && esGerencia && (
           <Ajustes
             session={session}
             onVolver={() => irA('dashboard')}
