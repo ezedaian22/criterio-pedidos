@@ -20,7 +20,6 @@ export default function DistribucionCortes({ session, onVolver }) {
   const [exportando, setExportando] = useState(false)
   const [error, setError] = useState('')
   const [temporadasCostos, setTemporadasCostos] = useState([])
-  const [temporadaCostosId, setTemporadaCostosId] = useState('')
   const [costosPorCodigo, setCostosPorCodigo] = useState({})
   const [panelDerecho, setPanelDerecho] = useState('talleres')
 
@@ -36,8 +35,8 @@ export default function DistribucionCortes({ session, onVolver }) {
         if (c && cods.indexOf(c) === -1) cods.push(c)
       })
     })
-    cargarCostos(cods, temporadaCostosId)
-  }, [seleccionados.join(','), temporadaCostosId, pedidos.length])
+    cargarCostos(cods)
+  }, [seleccionados.join(','), pedidos.length])
 
   async function cargar() {
     setCargando(true)
@@ -88,13 +87,13 @@ export default function DistribucionCortes({ session, onVolver }) {
     }
   }
 
-  async function cargarCostos(codigos, tempId) {
-    if (!tempId || !codigos.length) { setCostosPorCodigo({}); return }
+  async function cargarCostos(codigos) {
+    if (!codigos.length) { setCostosPorCodigo({}); return }
     try {
+      // Busca en TODAS las temporadas (el mismo código puede estar en varias)
       const resArt = await supabaseCostos
         .from('articulos')
-        .select('id, codigo, descripcion, confeccion, categoria, notas_taller')
-        .eq('temporada_id', tempId)
+        .select('id, codigo, descripcion, confeccion, categoria, notas_taller, temporada_id, created_at')
         .in('codigo', codigos)
       if (resArt.error) throw resArt.error
       const arts = resArt.data || []
@@ -108,9 +107,9 @@ export default function DistribucionCortes({ session, onVolver }) {
       if (resTelas.error) throw resTelas.error
       const rel = resTelas.data || []
 
-      let precios = []
       const idsPrecio = []
       rel.forEach(r => { if (r.precio_tela_id && idsPrecio.indexOf(r.precio_tela_id) === -1) idsPrecio.push(r.precio_tela_id) })
+      let precios = []
       if (idsPrecio.length) {
         const resPrecios = await supabaseCostos
           .from('precios_tela')
@@ -134,12 +133,28 @@ export default function DistribucionCortes({ session, onVolver }) {
         })
       })
 
-      const mapa = {}
+      // Si un código está en varias temporadas: gana el que TIENE tela cargada
+      // y, entre esos, el más reciente
+      const elegido = {}
       arts.forEach(a => {
-        mapa[String(a.codigo)] = {
+        const c = String(a.codigo)
+        const tiene = (porArtId[a.id] || []).length > 0
+        const act = elegido[c]
+        if (!act) { elegido[c] = { art: a, tiene: tiene }; return }
+        if (tiene && !act.tiene) { elegido[c] = { art: a, tiene: tiene }; return }
+        if (tiene === act.tiene && String(a.created_at || '') > String(act.art.created_at || '')) {
+          elegido[c] = { art: a, tiene: tiene }
+        }
+      })
+
+      const mapa = {}
+      Object.keys(elegido).forEach(c => {
+        const a = elegido[c].art
+        mapa[c] = {
           confeccion: Number(a.confeccion) || 0,
           categoria: a.categoria || '',
           notas_taller: a.notas_taller || '',
+          temporada_id: a.temporada_id,
           telas: porArtId[a.id] || []
         }
       })
@@ -275,6 +290,13 @@ export default function DistribucionCortes({ session, onVolver }) {
       total: t.cantidad * it.unidades,
       costo: t.cantidad * it.unidades * t.precio
     }))
+  }
+
+  function nombreTemporada(it) {
+    const c = costosPorCodigo[String(it.codigo)]
+    if (!c || !c.temporada_id) return ''
+    const t = temporadasCostos.find(x => x.id === c.temporada_id)
+    return t ? t.nombre : ''
   }
 
   // Resumen de tela por taller
@@ -429,22 +451,6 @@ export default function DistribucionCortes({ session, onVolver }) {
               <button onClick={() => setSoloPendientes(v => !v)} style={soloPendientes ? estiloTabActivo : estiloTab}>
                 {soloPendientes ? '✓ Solo pendientes' : 'Solo pendientes'}
               </button>
-              {temporadasCostos.length > 0 && (
-                <select
-                  value={temporadaCostosId}
-                  onChange={e => setTemporadaCostosId(e.target.value)}
-                  title="Temporada de costos que se usa para tela y precios"
-                  style={{
-                    backgroundColor: '#1a1f35', color: '#c8d8ff', border: '1px solid #2a3150',
-                    borderRadius: '0.45rem', padding: '0.3rem 0.45rem', fontSize: '0.76rem',
-                    fontWeight: 700, cursor: 'pointer'
-                  }}
-                >
-                  {temporadasCostos.map(t => (
-                    <option key={t.id} value={t.id}>{t.nombre}{t.activa ? ' ●' : ''}</option>
-                  ))}
-                </select>
-              )}
               <button onClick={exportar} disabled={exportando} style={{ ...estiloBotonPrim, opacity: exportando ? 0.6 : 1 }}>
                 {exportando ? 'Exportando…' : '📊 Sheets'}
               </button>
@@ -488,6 +494,7 @@ export default function DistribucionCortes({ session, onVolver }) {
                             <span key={'tl' + ix} style={{ color: '#5eead4', fontSize: '0.7rem', display: 'block' }}>
                               🧵 {tl.tela}: {redondear(tl.total)} {tl.unidad} ({redondear(tl.porPrenda)} c/u)
                               {tl.precio > 0 ? ' · ' + plata(tl.costo) : ''}
+                              {nombreTemporada(it) ? ' · ' + nombreTemporada(it) : ''}
                             </span>
                           ))}
                         </span>
