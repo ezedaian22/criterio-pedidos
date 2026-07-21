@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import NuevoPedido from './pages/NuevoPedido'
 import DetallePedido from './pages/DetallePedido'
 import Ajustes from './pages/Ajustes'
+import DistribucionCortes from './pages/DistribucionCortes'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -30,7 +31,7 @@ export default function App() {
   }
 
   function irA(pag, data = null) {
-    if (pag === 'ajustes' && !esGerencia) return
+    if ((pag === 'ajustes' || pag === 'cortes') && !esGerencia) return
     setPagina(pag)
     if (data) setPedidoSeleccionado(data)
   }
@@ -78,6 +79,28 @@ export default function App() {
             textShadow: '0 0 20px rgba(123,159,255,0.5)'
           }}>PEDIDOS</span>
         </button>
+
+        {/* Solapas — solo gerencia */}
+        {esGerencia && (
+          <nav style={{ display: 'flex', gap: '0.4rem', marginLeft: '0.75rem', flex: 1 }}>
+            <button
+              onClick={() => irA('cortes')}
+              style={{
+                backgroundColor: pagina === 'cortes' ? '#1e3a8a' : 'transparent',
+                color: pagina === 'cortes' ? '#ffffff' : '#7b9fff',
+                border: '1px solid #3b5bdb',
+                borderRadius: '0.5rem',
+                padding: '0.3rem 0.7rem',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.03em'
+              }}
+            >
+              CORTES
+            </button>
+          </nav>
+        )}
 
         {/* Usuario */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -152,6 +175,12 @@ export default function App() {
           <DetallePedido
             session={session}
             pedido={pedidoSeleccionado}
+            onVolver={() => irA('dashboard')}
+          />
+        )}
+        {pagina === 'cortes' && esGerencia && (
+          <DistribucionCortes
+            session={session}
             onVolver={() => irA('dashboard')}
           />
         )}
