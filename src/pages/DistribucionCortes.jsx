@@ -1,6 +1,6 @@
 import React from 'react'
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseCostos } from '../lib/supabase'
 import { formatFecha } from '../lib/utils'
 import { exportarCortesSheets } from '../lib/exportarSheets'
 
@@ -19,9 +19,25 @@ export default function DistribucionCortes({ session, onVolver }) {
   const [autoasignando, setAutoasignando] = useState(false)
   const [exportando, setExportando] = useState(false)
   const [error, setError] = useState('')
+  const [temporadasCostos, setTemporadasCostos] = useState([])
+  const [temporadaCostosId, setTemporadaCostosId] = useState('')
+  const [costosPorCodigo, setCostosPorCodigo] = useState({})
+  const [panelDerecho, setPanelDerecho] = useState('talleres')
 
   useEffect(() => { cargar() }, [soloActivos])
   useEffect(() => { cargarHistorial() }, [])
+  useEffect(() => { cargarTemporadasCostos() }, [])
+  useEffect(() => {
+    const cods = []
+    pedidos.forEach(p => {
+      if (seleccionados.indexOf(p.id) === -1) return
+      ;(p.pedido_articulos || []).forEach(a => {
+        const c = String(a.codigo_nuestro || '')
+        if (c && cods.indexOf(c) === -1) cods.push(c)
+      })
+    })
+    cargarCostos(cods, temporadaCostosId)
+  }, [seleccionados.join(','), temporadaCostosId, pedidos.length])
 
   async function cargar() {
     setCargando(true)
@@ -51,6 +67,86 @@ export default function DistribucionCortes({ session, onVolver }) {
       setHistorial(mapa)
     } catch (err) {
       console.error('Historial de talleres:', err)
+    }
+  }
+
+  // ─── Costos: telas, consumo y precio (schema costos) ───
+  async function cargarTemporadasCostos() {
+    try {
+      const { data, error } = await supabaseCostos
+        .from('temporadas')
+        .select('id, nombre, activa')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const lista = data || []
+      setTemporadasCostos(lista)
+      const activa = lista.find(t => t.activa)
+      if (activa) setTemporadaCostosId(activa.id)
+      else if (lista.length) setTemporadaCostosId(lista[0].id)
+    } catch (err) {
+      console.error('Temporadas de costos:', err)
+    }
+  }
+
+  async function cargarCostos(codigos, tempId) {
+    if (!tempId || !codigos.length) { setCostosPorCodigo({}); return }
+    try {
+      const resArt = await supabaseCostos
+        .from('articulos')
+        .select('id, codigo, descripcion, confeccion, categoria, notas_taller')
+        .eq('temporada_id', tempId)
+        .in('codigo', codigos)
+      if (resArt.error) throw resArt.error
+      const arts = resArt.data || []
+      if (!arts.length) { setCostosPorCodigo({}); return }
+
+      const artIds = arts.map(a => a.id)
+      const resTelas = await supabaseCostos
+        .from('articulo_telas')
+        .select('articulo_id, cantidad, precio_tela_id')
+        .in('articulo_id', artIds)
+      if (resTelas.error) throw resTelas.error
+      const rel = resTelas.data || []
+
+      let precios = []
+      const idsPrecio = []
+      rel.forEach(r => { if (r.precio_tela_id && idsPrecio.indexOf(r.precio_tela_id) === -1) idsPrecio.push(r.precio_tela_id) })
+      if (idsPrecio.length) {
+        const resPrecios = await supabaseCostos
+          .from('precios_tela')
+          .select('id, nombre, precio, unidad')
+          .in('id', idsPrecio)
+        if (resPrecios.error) throw resPrecios.error
+        precios = resPrecios.data || []
+      }
+      const mapaPrecio = {}
+      precios.forEach(pr => { mapaPrecio[pr.id] = pr })
+
+      const porArtId = {}
+      rel.forEach(r => {
+        if (!porArtId[r.articulo_id]) porArtId[r.articulo_id] = []
+        const pr = mapaPrecio[r.precio_tela_id]
+        porArtId[r.articulo_id].push({
+          tela: pr ? pr.nombre : 'Tela sin nombre',
+          precio: pr ? Number(pr.precio) || 0 : 0,
+          unidad: pr ? (pr.unidad || '') : '',
+          cantidad: Number(r.cantidad) || 0
+        })
+      })
+
+      const mapa = {}
+      arts.forEach(a => {
+        mapa[String(a.codigo)] = {
+          confeccion: Number(a.confeccion) || 0,
+          categoria: a.categoria || '',
+          notas_taller: a.notas_taller || '',
+          telas: porArtId[a.id] || []
+        }
+      })
+      setCostosPorCodigo(mapa)
+    } catch (err) {
+      console.error('Costos:', err)
+      setCostosPorCodigo({})
     }
   }
 
@@ -166,6 +262,37 @@ export default function DistribucionCortes({ session, onVolver }) {
   const totalUnidades = filas.reduce((s, f) => s + (Number(f.unidades) || 0), 0)
   const sinAsignar = items.filter(i => !i.taller).length
   const sugeridos = items.filter(i => !i.taller && historial[String(i.codigo)])
+
+  // Tela de cada artículo: consumo por prenda × unidades del pedido
+  function telasDeItem(it) {
+    const c = costosPorCodigo[String(it.codigo)]
+    if (!c || !c.telas.length) return []
+    return c.telas.map(t => ({
+      tela: t.tela,
+      unidad: t.unidad,
+      precio: t.precio,
+      porPrenda: t.cantidad,
+      total: t.cantidad * it.unidades,
+      costo: t.cantidad * it.unidades * t.precio
+    }))
+  }
+
+  // Resumen de tela por taller
+  const telaPorTaller = {}
+  items.forEach(it => {
+    const t = it.taller || 'Sin asignar'
+    const lista = telasDeItem(it)
+    if (!lista.length) return
+    if (!telaPorTaller[t]) telaPorTaller[t] = {}
+    lista.forEach(x => {
+      const k = x.tela + ' | ' + (x.unidad || '')
+      if (!telaPorTaller[t][k]) telaPorTaller[t][k] = { tela: x.tela, unidad: x.unidad, total: 0, costo: 0 }
+      telaPorTaller[t][k].total += x.total
+      telaPorTaller[t][k].costo += x.costo
+    })
+  })
+
+  const hayCostos = Object.keys(costosPorCodigo).length > 0
 
   async function autoasignar() {
     if (!sugeridos.length) return
@@ -302,6 +429,22 @@ export default function DistribucionCortes({ session, onVolver }) {
               <button onClick={() => setSoloPendientes(v => !v)} style={soloPendientes ? estiloTabActivo : estiloTab}>
                 {soloPendientes ? '✓ Solo pendientes' : 'Solo pendientes'}
               </button>
+              {temporadasCostos.length > 0 && (
+                <select
+                  value={temporadaCostosId}
+                  onChange={e => setTemporadaCostosId(e.target.value)}
+                  title="Temporada de costos que se usa para tela y precios"
+                  style={{
+                    backgroundColor: '#1a1f35', color: '#c8d8ff', border: '1px solid #2a3150',
+                    borderRadius: '0.45rem', padding: '0.3rem 0.45rem', fontSize: '0.76rem',
+                    fontWeight: 700, cursor: 'pointer'
+                  }}
+                >
+                  {temporadasCostos.map(t => (
+                    <option key={t.id} value={t.id}>{t.nombre}{t.activa ? ' ●' : ''}</option>
+                  ))}
+                </select>
+              )}
               <button onClick={exportar} disabled={exportando} style={{ ...estiloBotonPrim, opacity: exportando ? 0.6 : 1 }}>
                 {exportando ? 'Exportando…' : '📊 Sheets'}
               </button>
@@ -341,6 +484,12 @@ export default function DistribucionCortes({ session, onVolver }) {
                               {it.ids.length} pedidos: {it.origenes.join(' + ')}
                             </span>
                           )}
+                          {telasDeItem(it).map((tl, ix) => (
+                            <span key={'tl' + ix} style={{ color: '#5eead4', fontSize: '0.7rem', display: 'block' }}>
+                              🧵 {tl.tela}: {redondear(tl.total)} {tl.unidad} ({redondear(tl.porPrenda)} c/u)
+                              {tl.precio > 0 ? ' · ' + plata(tl.costo) : ''}
+                            </span>
+                          ))}
                         </span>
                         <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.85rem', minWidth: '4rem', textAlign: 'right' }}>
                           {it.unidades.toLocaleString('es-AR')} u
@@ -383,11 +532,57 @@ export default function DistribucionCortes({ session, onVolver }) {
           {/* Columna derecha: cómo va quedando, en vivo */}
           <div style={{ flex: '1 1 18rem', minWidth: '16rem', position: 'sticky', top: '9rem' }}>
             <div style={estiloPanelChico}>
-              <div style={{ color: '#c8d8ff', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', marginBottom: '0.5rem' }}>
-                CÓMO VA QUEDANDO
+              <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                <button onClick={() => setPanelDerecho('talleres')} style={panelDerecho === 'talleres' ? estiloTabActivo : estiloTab}>
+                  Cómo va quedando
+                </button>
+                {hayCostos && (
+                  <button onClick={() => setPanelDerecho('tela')} style={panelDerecho === 'tela' ? estiloTabActivo : estiloTab}>
+                    🧵 Tela por taller
+                  </button>
+                )}
               </div>
 
-              {nombresGrupo.length === 0 ? (
+              {panelDerecho === 'tela' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '70vh', overflowY: 'auto' }}>
+                  {Object.keys(telaPorTaller).length === 0 ? (
+                    <p style={{ color: '#8b9dc3', fontSize: '0.8rem', margin: 0 }}>
+                      No hay datos de tela para estos artículos en la temporada elegida.
+                    </p>
+                  ) : nombresGrupo.filter(t => telaPorTaller[t]).map(t => {
+                    const telas = Object.keys(telaPorTaller[t]).map(k => telaPorTaller[t][k])
+                    const costoTotal = telas.reduce((s2, x) => s2 + x.costo, 0)
+                    const esSin = t === 'Sin asignar'
+                    return (
+                      <div key={'tela_' + t} style={{
+                        backgroundColor: esSin ? '#231d0c' : '#0d2b28',
+                        border: '1px solid ' + (esSin ? '#a16207' : '#14746b'),
+                        borderRadius: '0.5rem',
+                        padding: '0.45rem 0.55rem'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem' }}>
+                          <strong style={{ color: esSin ? '#fbbf24' : '#5eead4', fontSize: '0.85rem' }}>{t}</strong>
+                          {costoTotal > 0 && (
+                            <span style={{ color: '#c8d8ff', fontSize: '0.76rem', fontWeight: 700 }}>{plata(costoTotal)}</span>
+                          )}
+                        </div>
+                        <div style={{ marginTop: '0.25rem', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                          {telas.map((x, ix) => (
+                            <div key={'tt' + ix} style={{ display: 'flex', gap: '0.4rem', fontSize: '0.74rem' }}>
+                              <span style={{ color: '#c8d8ff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {x.tela}
+                              </span>
+                              <span style={{ color: '#fff', fontWeight: 800 }}>
+                                {redondear(x.total)} {x.unidad}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : nombresGrupo.length === 0 ? (
                 <p style={{ color: '#8b9dc3', fontSize: '0.8rem', margin: 0 }}>Todavía no asignaste ningún taller.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '70vh', overflowY: 'auto' }}>
@@ -530,4 +725,17 @@ const estiloTabActivo = {
   backgroundColor: '#1e3a8a',
   color: '#fff',
   border: '1px solid #3b5bdb'
+}
+
+// ─── Auxiliares ───────────────────────────────────────────────────────────────
+
+function plata(n) {
+  const v = Math.round(Number(n) || 0)
+  return '$' + v.toLocaleString('es-AR')
+}
+
+function redondear(n) {
+  const v = Number(n) || 0
+  const r = Math.round(v * 100) / 100
+  return r.toLocaleString('es-AR')
 }
