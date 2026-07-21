@@ -8,15 +8,18 @@ const TALLERES = ['Eva', 'Juan', 'Justino', 'Jony', 'Farías', 'Lezcano', 'Walte
 
 export default function DistribucionCortes({ session, onVolver }) {
   const [pedidos, setPedidos] = useState([])
+  const [historial, setHistorial] = useState({})
   const [cargando, setCargando] = useState(true)
   const [seleccionados, setSeleccionados] = useState([])
   const [vista, setVista] = useState('pedido')
   const [soloActivos, setSoloActivos] = useState(true)
   const [guardando, setGuardando] = useState(null)
+  const [autoasignando, setAutoasignando] = useState(false)
   const [exportando, setExportando] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => { cargar() }, [soloActivos])
+  useEffect(() => { cargarHistorial() }, [])
 
   async function cargar() {
     setCargando(true)
@@ -37,6 +40,19 @@ export default function DistribucionCortes({ session, onVolver }) {
     }
   }
 
+  // Memoria: a qué taller fue cada artículo la última vez
+  async function cargarHistorial() {
+    try {
+      const { data, error } = await supabase.from('taller_por_articulo').select('codigo_nuestro, taller')
+      if (error) throw error
+      const mapa = {}
+      ;(data || []).forEach(r => { if (r.codigo_nuestro) mapa[String(r.codigo_nuestro)] = r.taller })
+      setHistorial(mapa)
+    } catch (err) {
+      console.error('Historial de talleres:', err)
+    }
+  }
+
   function togglePedido(id) {
     setSeleccionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.concat(id))
   }
@@ -45,16 +61,27 @@ export default function DistribucionCortes({ session, onVolver }) {
     setSeleccionados(seleccionados.length === pedidos.length ? [] : pedidos.map(p => p.id))
   }
 
-  async function asignarTaller(articuloId, taller) {
+  async function asignarTaller(articuloId, taller, codigo) {
     setGuardando(articuloId)
     try {
       const valor = taller || null
       const { error } = await supabase.from('pedido_articulos').update({ taller: valor }).eq('id', articuloId)
       if (error) throw error
+
       setPedidos(prev => prev.map(p => ({
         ...p,
         pedido_articulos: (p.pedido_articulos || []).map(a => a.id === articuloId ? { ...a, taller: valor } : a)
       })))
+
+      // Guardar en la memoria para la próxima vez
+      if (valor && codigo) {
+        const cod = String(codigo)
+        const { error: errMem } = await supabase
+          .from('taller_por_articulo')
+          .upsert({ codigo_nuestro: cod, taller: valor, actualizado: new Date().toISOString() }, { onConflict: 'codigo_nuestro' })
+        if (errMem) console.error('No se pudo guardar en memoria:', errMem)
+        else setHistorial(prev => ({ ...prev, [cod]: valor }))
+      }
     } catch (err) {
       console.error(err)
       setError(err.message || 'No se pudo guardar el taller')
@@ -71,7 +98,7 @@ export default function DistribucionCortes({ session, onVolver }) {
     )
   }
 
-  // Filas planas para agrupar por taller y para exportar
+  // Filas planas para agrupar y exportar
   const filas = []
   pedidosElegidos.forEach(p => {
     articulosOrdenados(p).forEach(a => {
@@ -90,6 +117,21 @@ export default function DistribucionCortes({ session, onVolver }) {
 
   const totalUnidades = filas.reduce((s, f) => s + (Number(f.unidades) || 0), 0)
   const sinAsignar = filas.filter(f => !f.taller).length
+  const sugeridos = filas.filter(f => !f.taller && historial[String(f.codigo)])
+
+  async function autoasignar() {
+    if (!sugeridos.length) return
+    setAutoasignando(true)
+    setError('')
+    try {
+      for (let i = 0; i < sugeridos.length; i++) {
+        const f = sugeridos[i]
+        await asignarTaller(f.articuloId, historial[String(f.codigo)], f.codigo)
+      }
+    } finally {
+      setAutoasignando(false)
+    }
+  }
 
   async function exportar() {
     if (!filas.length) return
@@ -105,7 +147,7 @@ export default function DistribucionCortes({ session, onVolver }) {
     }
   }
 
-  // Agrupado por taller (para la vista "Por taller")
+  // Agrupado por taller — se recalcula solo, en vivo
   const grupos = {}
   filas.forEach(f => {
     const t = f.taller || 'Sin asignar'
@@ -190,22 +232,54 @@ export default function DistribucionCortes({ session, onVolver }) {
         )}
       </div>
 
-      {/* Resumen + acciones */}
+      {/* Resumen + acciones + distribución en vivo */}
       {filas.length > 0 && (
-        <div style={{ ...estiloPanel, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
-          <div style={{ color: '#c8d8ff', fontSize: '0.85rem' }}>
-            <strong style={{ color: '#fff' }}>{filas.length}</strong> artículos ·{' '}
-            <strong style={{ color: '#fff' }}>{totalUnidades.toLocaleString('es-AR')}</strong> unidades
-            {sinAsignar > 0 && (
-              <span style={{ color: '#fbbf24' }}> · {sinAsignar} sin taller</span>
-            )}
+        <div style={{ ...estiloPanel, position: 'sticky', top: '4.2rem', zIndex: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
+            <div style={{ color: '#c8d8ff', fontSize: '0.85rem' }}>
+              <strong style={{ color: '#fff' }}>{filas.length}</strong> artículos ·{' '}
+              <strong style={{ color: '#fff' }}>{totalUnidades.toLocaleString('es-AR')}</strong> unidades
+              {sinAsignar > 0 && (
+                <span style={{ color: '#fbbf24' }}> · {sinAsignar} sin taller</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {sugeridos.length > 0 && (
+                <button onClick={autoasignar} disabled={autoasignando} style={{ ...estiloBotonMemoria, opacity: autoasignando ? 0.6 : 1 }}>
+                  {autoasignando ? 'Asignando…' : '⟲ Autoasignar ' + sugeridos.length}
+                </button>
+              )}
+              <button onClick={() => setVista('pedido')} style={vista === 'pedido' ? estiloTabActivo : estiloTab}>Por pedido</button>
+              <button onClick={() => setVista('taller')} style={vista === 'taller' ? estiloTabActivo : estiloTab}>Por taller</button>
+              <button onClick={exportar} disabled={exportando} style={{ ...estiloBotonPrim, opacity: exportando ? 0.6 : 1 }}>
+                {exportando ? 'Exportando…' : '📊 Exportar → Sheets'}
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={() => setVista('pedido')} style={vista === 'pedido' ? estiloTabActivo : estiloTab}>Por pedido</button>
-            <button onClick={() => setVista('taller')} style={vista === 'taller' ? estiloTabActivo : estiloTab}>Por taller</button>
-            <button onClick={exportar} disabled={exportando} style={{ ...estiloBotonPrim, opacity: exportando ? 0.6 : 1 }}>
-              {exportando ? 'Exportando…' : '📊 Exportar → Sheets'}
-            </button>
+
+          {/* Cómo va quedando la distribución — se actualiza al instante */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid #2a3150' }}>
+            {nombresGrupo.map(t => {
+              const items = grupos[t]
+              const sub = items.reduce((s, f) => s + (Number(f.unidades) || 0), 0)
+              const esSin = t === 'Sin asignar'
+              return (
+                <span
+                  key={t}
+                  style={{
+                    backgroundColor: esSin ? '#3a2f10' : '#1e3a8a',
+                    border: '1px solid ' + (esSin ? '#a16207' : '#3b5bdb'),
+                    color: esSin ? '#fbbf24' : '#fff',
+                    borderRadius: '2rem',
+                    padding: '0.25rem 0.7rem',
+                    fontSize: '0.76rem',
+                    fontWeight: 700
+                  }}
+                >
+                  {t} · {sub.toLocaleString('es-AR')}u · {items.length} art.
+                </span>
+              )
+            })}
           </div>
         </div>
       )}
@@ -224,37 +298,49 @@ export default function DistribucionCortes({ session, onVolver }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-            {articulosOrdenados(p).map(a => (
-              <div key={a.id} style={estiloFila}>
-                <span style={{ color: '#7b9fff', fontWeight: 800, minWidth: '3.5rem', fontSize: '0.9rem' }}>
-                  {a.codigo_nuestro}
-                </span>
-                <span style={{ color: '#e5e7eb', flex: 1, fontSize: '0.85rem', minWidth: '9rem' }}>
-                  {a.descripcion_correcta || a.descripcion_cliente || ''}
-                </span>
-                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem', minWidth: '4.5rem', textAlign: 'right' }}>
-                  {(a.total_unidades || 0).toLocaleString('es-AR')} u
-                </span>
-                <select
-                  value={a.taller || ''}
-                  onChange={e => asignarTaller(a.id, e.target.value)}
-                  disabled={guardando === a.id}
-                  style={{
-                    backgroundColor: a.taller ? '#1e3a8a' : '#1a1f35',
-                    color: '#fff',
-                    border: '1px solid ' + (a.taller ? '#3b5bdb' : '#2a3150'),
-                    borderRadius: '0.4rem',
-                    padding: '0.35rem 0.5rem',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    minWidth: '8rem'
-                  }}
-                >
-                  <option value="">Sin asignar</option>
-                  {TALLERES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            ))}
+            {articulosOrdenados(p).map(a => {
+              const sugerido = !a.taller ? historial[String(a.codigo_nuestro)] : null
+              return (
+                <div key={a.id} style={estiloFila}>
+                  <span style={{ color: '#7b9fff', fontWeight: 800, minWidth: '3.5rem', fontSize: '0.9rem' }}>
+                    {a.codigo_nuestro}
+                  </span>
+                  <span style={{ color: '#e5e7eb', flex: 1, fontSize: '0.85rem', minWidth: '9rem' }}>
+                    {a.descripcion_correcta || a.descripcion_cliente || ''}
+                  </span>
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem', minWidth: '4.5rem', textAlign: 'right' }}>
+                    {(a.total_unidades || 0).toLocaleString('es-AR')} u
+                  </span>
+                  {sugerido && (
+                    <button
+                      onClick={() => asignarTaller(a.id, sugerido, a.codigo_nuestro)}
+                      title="La última vez fue a este taller"
+                      style={estiloSugerencia}
+                    >
+                      ⟲ {sugerido}
+                    </button>
+                  )}
+                  <select
+                    value={a.taller || ''}
+                    onChange={e => asignarTaller(a.id, e.target.value, a.codigo_nuestro)}
+                    disabled={guardando === a.id}
+                    style={{
+                      backgroundColor: a.taller ? '#1e3a8a' : '#1a1f35',
+                      color: '#fff',
+                      border: '1px solid ' + (a.taller ? '#3b5bdb' : '#2a3150'),
+                      borderRadius: '0.4rem',
+                      padding: '0.35rem 0.5rem',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      minWidth: '8rem'
+                    }}
+                  >
+                    <option value="">Sin asignar</option>
+                    {TALLERES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              )
+            })}
           </div>
         </div>
       ))}
@@ -341,6 +427,28 @@ const estiloBotonPrim = {
   padding: '0.45rem 0.9rem',
   fontSize: '0.82rem',
   fontWeight: 800,
+  cursor: 'pointer'
+}
+
+const estiloBotonMemoria = {
+  backgroundColor: '#7c3aed',
+  color: '#ffffff',
+  border: 'none',
+  borderRadius: '0.5rem',
+  padding: '0.45rem 0.9rem',
+  fontSize: '0.82rem',
+  fontWeight: 800,
+  cursor: 'pointer'
+}
+
+const estiloSugerencia = {
+  backgroundColor: '#2a1f4d',
+  color: '#c4b5fd',
+  border: '1px dashed #7c3aed',
+  borderRadius: '0.4rem',
+  padding: '0.3rem 0.55rem',
+  fontSize: '0.76rem',
+  fontWeight: 700,
   cursor: 'pointer'
 }
 
