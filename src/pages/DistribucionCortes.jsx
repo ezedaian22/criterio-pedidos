@@ -22,10 +22,18 @@ export default function DistribucionCortes({ session, onVolver }) {
   const [temporadasCostos, setTemporadasCostos] = useState([])
   const [costosPorCodigo, setCostosPorCodigo] = useState({})
   const [panelDerecho, setPanelDerecho] = useState('talleres')
+  const [telasDisponibles, setTelasDisponibles] = useState([])
+  const [telaManual, setTelaManual] = useState({})
+  const [editandoTela, setEditandoTela] = useState(null)
+  const [formTela, setFormTela] = useState({ precio_tela_id: '', cantidad: '' })
+  const [confirmarLimpiar, setConfirmarLimpiar] = useState(false)
+  const [limpiando, setLimpiando] = useState(false)
 
   useEffect(() => { cargar() }, [soloActivos])
   useEffect(() => { cargarHistorial() }, [])
   useEffect(() => { cargarTemporadasCostos() }, [])
+  useEffect(() => { cargarTelasDisponibles() }, [])
+  useEffect(() => { cargarTelaManual() }, [])
   useEffect(() => {
     const cods = []
     pedidos.forEach(p => {
@@ -165,6 +173,123 @@ export default function DistribucionCortes({ session, onVolver }) {
     }
   }
 
+  // Lista de telas para elegir (de Criterio Costos, solo lectura)
+  async function cargarTelasDisponibles() {
+    try {
+      const { data, error } = await supabaseCostos
+        .from('precios_tela')
+        .select('id, nombre, precio, unidad, created_at')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const vistas = []
+      const lista = []
+      ;(data || []).forEach(t => {
+        const clave = String(t.nombre || '').toLowerCase().trim()
+        if (!clave || vistas.indexOf(clave) !== -1) return
+        vistas.push(clave)
+        lista.push(t)
+      })
+      lista.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'))
+      setTelasDisponibles(lista)
+    } catch (err) {
+      console.error('Telas disponibles:', err)
+    }
+  }
+
+  // Tela cargada a mano (schema pedidos, por código)
+  async function cargarTelaManual() {
+    try {
+      const { data, error } = await supabase
+        .from('tela_por_articulo')
+        .select('codigo_nuestro, precio_tela_id, tela_nombre, tela_unidad, tela_precio, cantidad')
+      if (error) throw error
+      const mapa = {}
+      ;(data || []).forEach(r => { if (r.codigo_nuestro) mapa[String(r.codigo_nuestro)] = r })
+      setTelaManual(mapa)
+    } catch (err) {
+      console.error('Tela manual:', err)
+    }
+  }
+
+  function abrirFormTela(codigo) {
+    const m = telaManual[String(codigo)]
+    setFormTela({
+      precio_tela_id: m ? (m.precio_tela_id || '') : '',
+      cantidad: m ? String(m.cantidad) : ''
+    })
+    setEditandoTela(String(codigo))
+  }
+
+  async function guardarTelaManual(codigo) {
+    const cant = parseFloat(String(formTela.cantidad).replace(',', '.'))
+    if (!formTela.precio_tela_id || isNaN(cant) || cant <= 0) {
+      setError('Elegí la tela y poné cuánto lleva por prenda')
+      return
+    }
+    const tela = telasDisponibles.find(t => t.id === formTela.precio_tela_id)
+    const fila = {
+      codigo_nuestro: String(codigo),
+      precio_tela_id: formTela.precio_tela_id,
+      tela_nombre: tela ? tela.nombre : '',
+      tela_unidad: tela ? (tela.unidad || '') : '',
+      tela_precio: tela ? Number(tela.precio) || 0 : 0,
+      cantidad: cant,
+      actualizado: new Date().toISOString()
+    }
+    try {
+      const { error } = await supabase.from('tela_por_articulo').upsert(fila, { onConflict: 'codigo_nuestro' })
+      if (error) throw error
+      setTelaManual(prev => ({ ...prev, [String(codigo)]: fila }))
+      setEditandoTela(null)
+      setError('')
+    } catch (err) {
+      console.error(err)
+      setError(err.message || 'No se pudo guardar la tela')
+    }
+  }
+
+  async function borrarTelaManual(codigo) {
+    try {
+      const { error } = await supabase.from('tela_por_articulo').delete().eq('codigo_nuestro', String(codigo))
+      if (error) throw error
+      setTelaManual(prev => {
+        const copia = { ...prev }
+        delete copia[String(codigo)]
+        return copia
+      })
+      setEditandoTela(null)
+    } catch (err) {
+      console.error(err)
+      setError(err.message || 'No se pudo borrar la tela')
+    }
+  }
+
+  // Dejar todos los artículos de los pedidos elegidos sin taller
+  async function borrarAsignaciones() {
+    const ids = []
+    pedidos.forEach(p => {
+      if (seleccionados.indexOf(p.id) === -1) return
+      ;(p.pedido_articulos || []).forEach(a => ids.push(a.id))
+    })
+    if (!ids.length) { setConfirmarLimpiar(false); return }
+    setLimpiando(true)
+    try {
+      const { error } = await supabase.from('pedido_articulos').update({ taller: null }).in('id', ids)
+      if (error) throw error
+      setPedidos(prev => prev.map(p => ({
+        ...p,
+        pedido_articulos: (p.pedido_articulos || []).map(a => ids.indexOf(a.id) !== -1 ? { ...a, taller: null } : a)
+      })))
+      setConfirmarLimpiar(false)
+      setError('')
+    } catch (err) {
+      console.error(err)
+      setError(err.message || 'No se pudieron borrar las asignaciones')
+    } finally {
+      setLimpiando(false)
+    }
+  }
+
   function togglePedido(id) {
     setSeleccionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.concat(id))
   }
@@ -281,15 +406,34 @@ export default function DistribucionCortes({ session, onVolver }) {
   // Tela de cada artículo: consumo por prenda × unidades del pedido
   function telasDeItem(it) {
     const c = costosPorCodigo[String(it.codigo)]
-    if (!c || !c.telas.length) return []
-    return c.telas.map(t => ({
-      tela: t.tela,
-      unidad: t.unidad,
-      precio: t.precio,
-      porPrenda: t.cantidad,
-      total: t.cantidad * it.unidades,
-      costo: t.cantidad * it.unidades * t.precio
-    }))
+    if (c && c.telas.length) {
+      return c.telas.map(t => ({
+        tela: t.tela,
+        unidad: t.unidad,
+        precio: t.precio,
+        porPrenda: t.cantidad,
+        total: t.cantidad * it.unidades,
+        costo: t.cantidad * it.unidades * t.precio,
+        manual: false
+      }))
+    }
+    // Sin ficha en Costos: uso la tela cargada a mano
+    const m = telaManual[String(it.codigo)]
+    if (m) {
+      const viva = telasDisponibles.find(t => t.id === m.precio_tela_id)
+      const precio = viva ? Number(viva.precio) || 0 : Number(m.tela_precio) || 0
+      const cant = Number(m.cantidad) || 0
+      return [{
+        tela: viva ? viva.nombre : (m.tela_nombre || 'Tela'),
+        unidad: viva ? (viva.unidad || '') : (m.tela_unidad || ''),
+        precio: precio,
+        porPrenda: cant,
+        total: cant * it.unidades,
+        costo: cant * it.unidades * precio,
+        manual: true
+      }]
+    }
+    return []
   }
 
   function nombreTemporada(it) {
@@ -314,7 +458,7 @@ export default function DistribucionCortes({ session, onVolver }) {
     })
   })
 
-  const hayCostos = Object.keys(costosPorCodigo).length > 0
+  const hayCostos = Object.keys(costosPorCodigo).length > 0 || Object.keys(telaManual).length > 0
 
   async function autoasignar() {
     if (!sugeridos.length) return
@@ -451,6 +595,9 @@ export default function DistribucionCortes({ session, onVolver }) {
               <button onClick={() => setSoloPendientes(v => !v)} style={soloPendientes ? estiloTabActivo : estiloTab}>
                 {soloPendientes ? '✓ Solo pendientes' : 'Solo pendientes'}
               </button>
+              <button onClick={() => setConfirmarLimpiar(true)} style={estiloBotonBorrar} title="Dejar todos los artículos sin taller">
+                ↺ Borrar asignaciones
+              </button>
               <button onClick={exportar} disabled={exportando} style={{ ...estiloBotonPrim, opacity: exportando ? 0.6 : 1 }}>
                 {exportando ? 'Exportando…' : '📊 Sheets'}
               </button>
@@ -491,12 +638,51 @@ export default function DistribucionCortes({ session, onVolver }) {
                             </span>
                           )}
                           {telasDeItem(it).map((tl, ix) => (
-                            <span key={'tl' + ix} style={{ color: '#5eead4', fontSize: '0.7rem', display: 'block' }}>
+                            <span key={'tl' + ix} style={{ color: tl.manual ? '#fca5a5' : '#5eead4', fontSize: '0.7rem', display: 'block' }}>
                               🧵 {tl.tela}: {redondear(tl.total)} {tl.unidad} ({redondear(tl.porPrenda)} c/u)
                               {tl.precio > 0 ? ' · ' + plata(tl.costo) : ''}
-                              {nombreTemporada(it) ? ' · ' + nombreTemporada(it) : ''}
+                              {tl.manual ? ' · a mano' : (nombreTemporada(it) ? ' · ' + nombreTemporada(it) : '')}
+                              {tl.manual && (
+                                <button onClick={() => abrirFormTela(it.codigo)} style={estiloLink}>editar</button>
+                              )}
+                              {tl.manual && (
+                                <button onClick={() => borrarTelaManual(it.codigo)} style={estiloLink}>borrar</button>
+                              )}
                             </span>
                           ))}
+
+                          {telasDeItem(it).length === 0 && editandoTela !== String(it.codigo) && (
+                            <button onClick={() => abrirFormTela(it.codigo)} style={estiloAgregarTela}>
+                              + agregar tela
+                            </button>
+                          )}
+
+                          {editandoTela === String(it.codigo) && (
+                            <span style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.25rem' }}>
+                              <select
+                                value={formTela.precio_tela_id}
+                                onChange={e => setFormTela({ ...formTela, precio_tela_id: e.target.value })}
+                                style={{ ...estiloInputChico, minWidth: '8rem' }}
+                              >
+                                <option value="">Tipo de tela…</option>
+                                {telasDisponibles.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.nombre}{t.unidad ? ' (' + t.unidad + ')' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="por prenda"
+                                value={formTela.cantidad}
+                                onChange={e => setFormTela({ ...formTela, cantidad: e.target.value })}
+                                style={{ ...estiloInputChico, width: '5.5rem' }}
+                              />
+                              <button onClick={() => guardarTelaManual(it.codigo)} style={estiloBotonMini}>Guardar</button>
+                              <button onClick={() => setEditandoTela(null)} style={estiloLink}>cancelar</button>
+                            </span>
+                          )}
                         </span>
                         <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.85rem', minWidth: '4rem', textAlign: 'right' }}>
                           {it.unidades.toLocaleString('es-AR')} u
@@ -636,6 +822,32 @@ export default function DistribucionCortes({ session, onVolver }) {
           Elegí al menos un pedido para ver los artículos.
         </p>
       )}
+
+      {confirmarLimpiar && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: '#13162b', border: '1px solid #b91c1c', borderRadius: '0.75rem',
+            padding: '1.1rem', maxWidth: '22rem', width: '100%'
+          }}>
+            <p style={{ color: '#fff', fontWeight: 800, margin: '0 0 0.4rem 0', fontSize: '0.95rem' }}>
+              ¿Borrar todas las asignaciones?
+            </p>
+            <p style={{ color: '#8b9dc3', fontSize: '0.82rem', margin: '0 0 0.9rem 0' }}>
+              Los artículos de los pedidos elegidos quedan sin taller y podés repartir de cero.
+              La memoria de talleres y las telas cargadas a mano no se tocan.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirmarLimpiar(false)} style={estiloBotonSec}>Cancelar</button>
+              <button onClick={borrarAsignaciones} disabled={limpiando} style={{ ...estiloBotonBorrar, opacity: limpiando ? 0.6 : 1 }}>
+                {limpiando ? 'Borrando…' : 'Sí, borrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -714,6 +926,59 @@ const estiloSugerencia = {
   fontSize: '0.72rem',
   fontWeight: 700,
   cursor: 'pointer'
+}
+
+const estiloBotonBorrar = {
+  backgroundColor: '#7f1d1d',
+  color: '#fecaca',
+  border: '1px solid #b91c1c',
+  borderRadius: '0.45rem',
+  padding: '0.3rem 0.6rem',
+  fontSize: '0.76rem',
+  fontWeight: 700,
+  cursor: 'pointer'
+}
+
+const estiloAgregarTela = {
+  backgroundColor: 'transparent',
+  color: '#5eead4',
+  border: '1px dashed #14746b',
+  borderRadius: '0.35rem',
+  padding: '0.15rem 0.45rem',
+  fontSize: '0.7rem',
+  fontWeight: 700,
+  cursor: 'pointer',
+  marginTop: '0.15rem'
+}
+
+const estiloInputChico = {
+  backgroundColor: '#1a1f35',
+  color: '#fff',
+  border: '1px solid #2a3150',
+  borderRadius: '0.35rem',
+  padding: '0.2rem 0.35rem',
+  fontSize: '0.72rem'
+}
+
+const estiloBotonMini = {
+  backgroundColor: '#14746b',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '0.35rem',
+  padding: '0.22rem 0.5rem',
+  fontSize: '0.72rem',
+  fontWeight: 800,
+  cursor: 'pointer'
+}
+
+const estiloLink = {
+  background: 'none',
+  border: 'none',
+  color: '#8b9dc3',
+  fontSize: '0.68rem',
+  textDecoration: 'underline',
+  cursor: 'pointer',
+  padding: '0 0.2rem'
 }
 
 const estiloTab = {
