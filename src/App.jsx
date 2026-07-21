@@ -7,6 +7,7 @@ import NuevoPedido from './pages/NuevoPedido'
 import DetallePedido from './pages/DetallePedido'
 import Ajustes from './pages/Ajustes'
 import DistribucionCortes from './pages/DistribucionCortes'
+import HistorialClientes from './pages/HistorialClientes'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -31,7 +32,7 @@ export default function App() {
   }
 
   function irA(pag, data = null) {
-    if ((pag === 'ajustes' || pag === 'cortes') && !esGerencia) return
+    if ((pag === 'ajustes' || pag === 'cortes' || pag === 'historial') && !esGerencia) return
     setPagina(pag)
     if (data) setPedidoSeleccionado(data)
   }
@@ -98,6 +99,22 @@ export default function App() {
               }}
             >
               CORTES
+            </button>
+            <button
+              onClick={() => irA('historial')}
+              style={{
+                backgroundColor: pagina === 'historial' ? '#1e3a8a' : 'transparent',
+                color: pagina === 'historial' ? '#ffffff' : '#7b9fff',
+                border: '1px solid #3b5bdb',
+                borderRadius: '0.5rem',
+                padding: '0.3rem 0.7rem',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.03em'
+              }}
+            >
+              HISTORIAL
             </button>
           </nav>
         )}
@@ -180,6 +197,12 @@ export default function App() {
         )}
         {pagina === 'cortes' && esGerencia && (
           <DistribucionCortes
+            session={session}
+            onVolver={() => irA('dashboard')}
+          />
+        )}
+        {pagina === 'historial' && esGerencia && (
+          <HistorialClientes
             session={session}
             onVolver={() => irA('dashboard')}
           />
