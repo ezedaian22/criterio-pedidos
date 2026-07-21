@@ -555,3 +555,183 @@ export async function exportarRomaneoSheets(pedido, articulos) {
 
   return 'https://docs.google.com/spreadsheets/d/' + spreadsheetId
 }
+
+// ─── EXPORT DISTRIBUCIÓN DE CORTES (agrupado por taller) ──────────────────────
+
+/**
+ * Exporta la distribución de cortes agrupada por taller, para imprimir y repartir.
+ * Columnas: Taller | Artículo | Descripción | Cliente | N° Pedido | Fecha entrega | Unidades
+ *
+ * @param {Array} filas - [{ taller, codigo, descripcion, cliente, numero_pedido, fecha_entrega, unidades }]
+ * @param {Array} ordenTalleres - orden en que se listan los talleres
+ */
+export async function exportarCortesSheets(filas, ordenTalleres) {
+  const token = await getValidToken()
+
+  const rows = []
+  rows.push(['DISTRIBUCIÓN DE CORTES'])
+  rows.push([])
+  rows.push(['Generado', new Date().toLocaleDateString('es-AR')])
+  rows.push([])
+
+  const headerRow = ['Taller', 'Artículo', 'Descripción', 'Cliente', 'N° Pedido', 'Fecha entrega', 'Unidades']
+  const headerRowIdx = rows.length
+  rows.push(headerRow)
+  const dataStart = rows.length
+
+  // Agrupar por taller
+  const grupos = {}
+  filas.forEach(f => {
+    const t = f.taller || 'Sin asignar'
+    if (!grupos[t]) grupos[t] = []
+    grupos[t].push(f)
+  })
+
+  const orden = ordenTalleres || []
+  const nombresGrupo = orden.filter(t => grupos[t])
+  Object.keys(grupos).forEach(t => {
+    if (t !== 'Sin asignar' && nombresGrupo.indexOf(t) === -1) nombresGrupo.push(t)
+  })
+  if (grupos['Sin asignar']) nombresGrupo.push('Sin asignar')
+
+  const filasSubtotal = []
+  const filasTaller = []
+  let totalGeneral = 0
+
+  nombresGrupo.forEach(t => {
+    const items = grupos[t].slice().sort((a, b) => {
+      const pa = String(a.cliente || '') + String(a.numero_pedido || '')
+      const pb = String(b.cliente || '') + String(b.numero_pedido || '')
+      if (pa !== pb) return pa < pb ? -1 : 1
+      return String(a.codigo || '').localeCompare(String(b.codigo || ''), 'es', { numeric: true })
+    })
+
+    let subtotal = 0
+    items.forEach((f, idx) => {
+      const u = Number(f.unidades) || 0
+      subtotal += u
+      if (idx === 0) filasTaller.push(rows.length)
+      rows.push([
+        idx === 0 ? t : '',
+        f.codigo || '',
+        f.descripcion || '',
+        f.cliente || '',
+        f.numero_pedido || '',
+        f.fecha_entrega || '',
+        u
+      ])
+    })
+
+    filasSubtotal.push(rows.length)
+    rows.push(['', '', '', '', '', 'TOTAL ' + t, subtotal])
+    totalGeneral += subtotal
+  })
+
+  rows.push([])
+  const totalRowIdx = rows.length
+  rows.push(['TOTAL GENERAL', '', '', '', '', '', totalGeneral])
+
+  // Crear spreadsheet
+  const titulo = 'Distribucion_cortes_' + new Date().toLocaleDateString('es-AR').replace(/\//g, '-')
+  const sheet = await crearSpreadsheet(token, titulo)
+  const spreadsheetId = sheet.spreadsheetId
+  const sheetId = sheet.sheets[0].properties.sheetId
+
+  let requests = []
+  await actualizarHoja(token, spreadsheetId, sheetId, 'Cortes', rows, requests)
+
+  const nCols = headerRow.length
+
+  requests.push(
+    { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: headerRowIdx + 1 } }, fields: 'gridProperties.frozenRowCount' } },
+
+    // Fondo blanco general
+    { repeatCell: {
+      range: { sheetId, startRowIndex: 0, endRowIndex: rows.length, startColumnIndex: 0, endColumnIndex: nCols },
+      cell: { userEnteredFormat: { backgroundColor: BLANCO, textFormat: { foregroundColor: TEXTO_NEGRO } } },
+      fields: 'userEnteredFormat(backgroundColor,textFormat)'
+    }},
+
+    // Título
+    { repeatCell: {
+      range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: nCols },
+      cell: { userEnteredFormat: {
+        textFormat: { bold: true, fontSize: 14, foregroundColor: BLANCO },
+        backgroundColor: AZUL_HEADER
+      }},
+      fields: 'userEnteredFormat(textFormat,backgroundColor)'
+    }},
+
+    // Header de tabla
+    { repeatCell: {
+      range: { sheetId, startRowIndex: headerRowIdx, endRowIndex: headerRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      cell: { userEnteredFormat: {
+        backgroundColor: AZUL_HEADER,
+        textFormat: { bold: true, foregroundColor: BLANCO },
+        horizontalAlignment: 'CENTER'
+      }},
+      fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+    }},
+
+    // Datos centrados
+    { repeatCell: {
+      range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { foregroundColor: TEXTO_NEGRO } } },
+      fields: 'userEnteredFormat(horizontalAlignment,textFormat)'
+    }},
+
+    // Descripción a la izquierda
+    { repeatCell: {
+      range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx + 1, startColumnIndex: 2, endColumnIndex: 3 },
+      cell: { userEnteredFormat: { horizontalAlignment: 'LEFT' } },
+      fields: 'userEnteredFormat.horizontalAlignment'
+    }},
+
+    // Total general
+    { repeatCell: {
+      range: { sheetId, startRowIndex: totalRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      cell: { userEnteredFormat: {
+        backgroundColor: color(235, 245, 235),
+        textFormat: { bold: true, foregroundColor: TEXTO_NEGRO },
+        horizontalAlignment: 'CENTER'
+      }},
+      fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+    }},
+
+    // Bordes
+    { updateBorders: {
+      range: { sheetId, startRowIndex: headerRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      top:    { style: 'SOLID', color: color(180, 180, 180) },
+      bottom: { style: 'SOLID', color: color(180, 180, 180) },
+      left:   { style: 'SOLID', color: color(180, 180, 180) },
+      right:  { style: 'SOLID', color: color(180, 180, 180) },
+      innerHorizontal: { style: 'SOLID', color: color(180, 180, 180) },
+      innerVertical:   { style: 'SOLID', color: color(180, 180, 180) }
+    }},
+
+    { autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: nCols } }}
+  )
+
+  // Nombre del taller en negrita + azul, y subtotales resaltados
+  filasTaller.forEach(r => {
+    requests.push({ repeatCell: {
+      range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: 1 },
+      cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: AZUL_HEADER } } },
+      fields: 'userEnteredFormat.textFormat'
+    }})
+  })
+  filasSubtotal.forEach(r => {
+    requests.push({ repeatCell: {
+      range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      cell: { userEnteredFormat: {
+        backgroundColor: color(232, 238, 255),
+        textFormat: { bold: true, foregroundColor: TEXTO_NEGRO }
+      }},
+      fields: 'userEnteredFormat(backgroundColor,textFormat)'
+    }})
+  })
+
+  await aplicarFormatos(token, spreadsheetId, requests)
+
+  return 'https://docs.google.com/spreadsheets/d/' + spreadsheetId
+}
