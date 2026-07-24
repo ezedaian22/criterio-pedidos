@@ -479,7 +479,11 @@ export default function DistribucionCortes({ session, onVolver }) {
     setExportando(true)
     setError('')
     try {
-      const url = await exportarCortesSheets(filas, TALLERES)
+      // Cada fila va con su tela (telasDeItem sirve igual: usa codigo + unidades)
+      const filasConTela = filas.map(function(f) {
+        return Object.assign({}, f, { telas: telasDeItem(f) })
+      })
+      const url = await exportarCortesSheets(filasConTela, TALLERES)
       window.open(url, '_blank')
     } catch (err) {
       setError(err.message || 'Error al exportar')
