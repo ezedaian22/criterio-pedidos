@@ -556,98 +556,144 @@ export async function exportarRomaneoSheets(pedido, articulos) {
   return 'https://docs.google.com/spreadsheets/d/' + spreadsheetId
 }
 
-// ─── EXPORT DISTRIBUCIÓN DE CORTES (agrupado por taller) ──────────────────────
+// ─── EXPORT DISTRIBUCIÓN DE CORTES (una hoja para Eva, una para Juan, el resto junto) ───
 
-/**
- * Exporta la distribución de cortes agrupada por taller, para imprimir y repartir.
- * Columnas: Taller | Artículo | Descripción | Cliente | N° Pedido | Fecha entrega | Unidades
- *
- * @param {Array} filas - [{ taller, codigo, descripcion, cliente, numero_pedido, fecha_entrega, unidades }]
- * @param {Array} ordenTalleres - orden en que se listan los talleres
- */
-export async function exportarCortesSheets(filas, ordenTalleres) {
-  const token = await getValidToken()
+async function crearSpreadsheetMulti(token, titulo, nombresHojas) {
+  const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      properties: { title: titulo },
+      sheets: nombresHojas.map(function(n, i) {
+        return { properties: { title: n, index: i } }
+      })
+    })
+  })
+  if (!res.ok) throw new Error('Error creando Spreadsheet: ' + res.status)
+  return res.json()
+}
 
+function fmtCantTela(n, unidad) {
+  const v = Math.round((Number(n) || 0) * 100) / 100
+  return v.toLocaleString('es-AR') + (unidad ? ' ' + unidad : '')
+}
+
+// Arma las filas de una hoja y devuelve los índices que hay que formatear
+function armarHojaCortes(filas, ordenTalleres, tituloHoja) {
   const rows = []
-  rows.push(['DISTRIBUCIÓN DE CORTES'])
+  rows.push(['DISTRIBUCIÓN DE CORTES — ' + String(tituloHoja).toUpperCase()])
   rows.push([])
   rows.push(['Generado', new Date().toLocaleDateString('es-AR')])
   rows.push([])
 
-  const headerRow = ['Taller', 'Artículo', 'Descripción', 'Cliente', 'N° Pedido', 'Fecha entrega', 'Unidades']
+  const header = ['Taller', 'Artículo', 'Descripción', 'Cliente', 'Fecha entrega', 'Unidades', 'Tela', 'Cant. tela']
   const headerRowIdx = rows.length
-  rows.push(headerRow)
+  rows.push(header)
   const dataStart = rows.length
 
   // Agrupar por taller
   const grupos = {}
-  filas.forEach(f => {
+  filas.forEach(function(f) {
     const t = f.taller || 'Sin asignar'
     if (!grupos[t]) grupos[t] = []
     grupos[t].push(f)
   })
 
   const orden = ordenTalleres || []
-  const nombresGrupo = orden.filter(t => grupos[t])
-  Object.keys(grupos).forEach(t => {
-    if (t !== 'Sin asignar' && nombresGrupo.indexOf(t) === -1) nombresGrupo.push(t)
+  const nombres = orden.filter(function(t) { return grupos[t] })
+  Object.keys(grupos).forEach(function(t) {
+    if (t !== 'Sin asignar' && nombres.indexOf(t) === -1) nombres.push(t)
   })
-  if (grupos['Sin asignar']) nombresGrupo.push('Sin asignar')
+  if (grupos['Sin asignar']) nombres.push('Sin asignar')
 
-  const filasSubtotal = []
   const filasTaller = []
+  const filasSubtotal = []
+  const totalesTela = {}
   let totalGeneral = 0
 
-  nombresGrupo.forEach(t => {
-    const items = grupos[t].slice().sort((a, b) => {
-      const pa = String(a.cliente || '') + String(a.numero_pedido || '')
-      const pb = String(b.cliente || '') + String(b.numero_pedido || '')
-      if (pa !== pb) return pa < pb ? -1 : 1
+  nombres.forEach(function(t) {
+    const items = grupos[t].slice().sort(function(a, b) {
+      const ca = String(a.cliente || ''), cb = String(b.cliente || '')
+      if (ca !== cb) return ca < cb ? -1 : 1
       return String(a.codigo || '').localeCompare(String(b.codigo || ''), 'es', { numeric: true })
     })
 
     let subtotal = 0
-    items.forEach((f, idx) => {
+    items.forEach(function(f, idx) {
       const u = Number(f.unidades) || 0
       subtotal += u
       if (idx === 0) filasTaller.push(rows.length)
+
+      const telas = f.telas || []
+      telas.forEach(function(x) {
+        const k = x.tela + '|' + (x.unidad || '')
+        if (!totalesTela[k]) totalesTela[k] = { tela: x.tela, unidad: x.unidad || '', total: 0 }
+        totalesTela[k].total += Number(x.total) || 0
+      })
+
       rows.push([
         idx === 0 ? t : '',
         f.codigo || '',
         f.descripcion || '',
         f.cliente || '',
-        f.numero_pedido || '',
         f.fecha_entrega || '',
-        u
+        u,
+        telas.map(function(x) { return x.tela }).join(' + '),
+        telas.map(function(x) { return fmtCantTela(x.total, x.unidad) }).join(' + ')
       ])
     })
 
     filasSubtotal.push(rows.length)
-    rows.push(['', '', '', '', '', 'TOTAL ' + t, subtotal])
+    rows.push(['', '', '', '', 'TOTAL ' + t, subtotal, '', ''])
     totalGeneral += subtotal
   })
 
+  // El TOTAL GENERAL solo tiene sentido si hay más de un taller en la hoja
+  let totalRowIdx
+  if (nombres.length > 1) {
+    rows.push([])
+    totalRowIdx = rows.length
+    rows.push(['TOTAL GENERAL', '', '', '', '', totalGeneral, '', ''])
+  } else {
+    totalRowIdx = filasSubtotal.length ? filasSubtotal[filasSubtotal.length - 1] : rows.length - 1
+  }
+
+  // Totales por tipo de tela, al final de todo
   rows.push([])
-  const totalRowIdx = rows.length
-  rows.push(['TOTAL GENERAL', '', '', '', '', '', totalGeneral])
+  const telaTituloIdx = rows.length
+  rows.push(['TOTALES POR TELA', '', '', '', '', '', '', ''])
+  const telaStart = rows.length
+  const listaTelas = Object.keys(totalesTela).map(function(k) { return totalesTela[k] })
+    .sort(function(a, b) { return String(a.tela).localeCompare(String(b.tela), 'es') })
+  listaTelas.forEach(function(x) {
+    rows.push([x.tela, fmtCantTela(x.total, x.unidad), '', '', '', '', '', ''])
+  })
+  const telaFin = rows.length
 
-  // Crear spreadsheet
-  const titulo = 'Distribucion_cortes_' + new Date().toLocaleDateString('es-AR').replace(/\//g, '-')
-  const sheet = await crearSpreadsheet(token, titulo)
-  const spreadsheetId = sheet.spreadsheetId
-  const sheetId = sheet.sheets[0].properties.sheetId
+  return {
+    rows: rows,
+    nCols: header.length,
+    headerRowIdx: headerRowIdx,
+    dataStart: dataStart,
+    filasTaller: filasTaller,
+    filasSubtotal: filasSubtotal,
+    totalRowIdx: totalRowIdx,
+    telaTituloIdx: telaTituloIdx,
+    telaStart: telaStart,
+    telaFin: telaFin
+  }
+}
 
-  let requests = []
-  await actualizarHoja(token, spreadsheetId, sheetId, 'Cortes', rows, requests)
+function formatosHojaCortes(sheetId, a) {
+  const reqs = []
+  const nCols = a.nCols
 
-  const nCols = headerRow.length
-
-  requests.push(
-    { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: headerRowIdx + 1 } }, fields: 'gridProperties.frozenRowCount' } },
+  reqs.push(
+    { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: a.headerRowIdx + 1 } }, fields: 'gridProperties.frozenRowCount' } },
 
     // Fondo blanco general
     { repeatCell: {
-      range: { sheetId, startRowIndex: 0, endRowIndex: rows.length, startColumnIndex: 0, endColumnIndex: nCols },
+      range: { sheetId, startRowIndex: 0, endRowIndex: a.rows.length, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: { backgroundColor: BLANCO, textFormat: { foregroundColor: TEXTO_NEGRO } } },
       fields: 'userEnteredFormat(backgroundColor,textFormat)'
     }},
@@ -664,7 +710,7 @@ export async function exportarCortesSheets(filas, ordenTalleres) {
 
     // Header de tabla
     { repeatCell: {
-      range: { sheetId, startRowIndex: headerRowIdx, endRowIndex: headerRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      range: { sheetId, startRowIndex: a.headerRowIdx, endRowIndex: a.headerRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: {
         backgroundColor: AZUL_HEADER,
         textFormat: { bold: true, foregroundColor: BLANCO },
@@ -675,21 +721,21 @@ export async function exportarCortesSheets(filas, ordenTalleres) {
 
     // Datos centrados
     { repeatCell: {
-      range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      range: { sheetId, startRowIndex: a.dataStart, endRowIndex: a.totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { foregroundColor: TEXTO_NEGRO } } },
       fields: 'userEnteredFormat(horizontalAlignment,textFormat)'
     }},
 
     // Descripción a la izquierda
     { repeatCell: {
-      range: { sheetId, startRowIndex: dataStart, endRowIndex: totalRowIdx + 1, startColumnIndex: 2, endColumnIndex: 3 },
+      range: { sheetId, startRowIndex: a.dataStart, endRowIndex: a.totalRowIdx + 1, startColumnIndex: 2, endColumnIndex: 3 },
       cell: { userEnteredFormat: { horizontalAlignment: 'LEFT' } },
       fields: 'userEnteredFormat.horizontalAlignment'
     }},
 
     // Total general
     { repeatCell: {
-      range: { sheetId, startRowIndex: totalRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      range: { sheetId, startRowIndex: a.totalRowIdx, endRowIndex: a.totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: {
         backgroundColor: color(235, 245, 235),
         textFormat: { bold: true, foregroundColor: TEXTO_NEGRO },
@@ -698,9 +744,9 @@ export async function exportarCortesSheets(filas, ordenTalleres) {
       fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
     }},
 
-    // Bordes
+    // Bordes de la tabla
     { updateBorders: {
-      range: { sheetId, startRowIndex: headerRowIdx, endRowIndex: totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
+      range: { sheetId, startRowIndex: a.headerRowIdx, endRowIndex: a.totalRowIdx + 1, startColumnIndex: 0, endColumnIndex: nCols },
       top:    { style: 'SOLID', color: color(180, 180, 180) },
       bottom: { style: 'SOLID', color: color(180, 180, 180) },
       left:   { style: 'SOLID', color: color(180, 180, 180) },
@@ -709,19 +755,54 @@ export async function exportarCortesSheets(filas, ordenTalleres) {
       innerVertical:   { style: 'SOLID', color: color(180, 180, 180) }
     }},
 
+    // Título del bloque de telas
+    { repeatCell: {
+      range: { sheetId, startRowIndex: a.telaTituloIdx, endRowIndex: a.telaTituloIdx + 1, startColumnIndex: 0, endColumnIndex: 2 },
+      cell: { userEnteredFormat: {
+        backgroundColor: color(13, 116, 107),
+        textFormat: { bold: true, foregroundColor: BLANCO },
+        horizontalAlignment: 'CENTER'
+      }},
+      fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+    }},
+
     { autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: nCols } }}
   )
 
-  // Nombre del taller en negrita + azul, y subtotales resaltados
-  filasTaller.forEach(r => {
-    requests.push({ repeatCell: {
+  // Bloque de totales por tela (si hay telas cargadas)
+  if (a.telaFin > a.telaStart) {
+    reqs.push(
+      { repeatCell: {
+        range: { sheetId, startRowIndex: a.telaStart, endRowIndex: a.telaFin, startColumnIndex: 0, endColumnIndex: 2 },
+        cell: { userEnteredFormat: {
+          backgroundColor: color(232, 245, 243),
+          textFormat: { bold: true, foregroundColor: TEXTO_NEGRO }
+        }},
+        fields: 'userEnteredFormat(backgroundColor,textFormat)'
+      }},
+      { updateBorders: {
+        range: { sheetId, startRowIndex: a.telaTituloIdx, endRowIndex: a.telaFin, startColumnIndex: 0, endColumnIndex: 2 },
+        top:    { style: 'SOLID', color: color(180, 180, 180) },
+        bottom: { style: 'SOLID', color: color(180, 180, 180) },
+        left:   { style: 'SOLID', color: color(180, 180, 180) },
+        right:  { style: 'SOLID', color: color(180, 180, 180) },
+        innerHorizontal: { style: 'SOLID', color: color(180, 180, 180) },
+        innerVertical:   { style: 'SOLID', color: color(180, 180, 180) }
+      }}
+    )
+  }
+
+  // Nombre del taller en negrita + azul
+  a.filasTaller.forEach(function(r) {
+    reqs.push({ repeatCell: {
       range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: 1 },
       cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: AZUL_HEADER } } },
       fields: 'userEnteredFormat.textFormat'
     }})
   })
-  filasSubtotal.forEach(r => {
-    requests.push({ repeatCell: {
+  // Subtotales resaltados
+  a.filasSubtotal.forEach(function(r) {
+    reqs.push({ repeatCell: {
       range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: nCols },
       cell: { userEnteredFormat: {
         backgroundColor: color(232, 238, 255),
@@ -730,6 +811,42 @@ export async function exportarCortesSheets(filas, ordenTalleres) {
       fields: 'userEnteredFormat(backgroundColor,textFormat)'
     }})
   })
+
+  return reqs
+}
+
+/**
+ * Exporta la distribución de cortes a Google Sheets, en tres hojas:
+ * "Eva", "Juan" y "Otros talleres".
+ * Columnas: Taller | Artículo | Descripción | Cliente | Fecha entrega | Unidades | Tela | Cant. tela
+ * Al final de cada hoja: total general y totales por tipo de tela.
+ *
+ * @param {Array} filas - [{ taller, codigo, descripcion, cliente, fecha_entrega, unidades, telas:[{tela,unidad,total}] }]
+ * @param {Array} ordenTalleres - orden en que se listan los talleres
+ */
+export async function exportarCortesSheets(filas, ordenTalleres) {
+  const token = await getValidToken()
+
+  const HOJAS = [
+    { titulo: 'Eva',            test: function(t) { return t === 'Eva' } },
+    { titulo: 'Juan',           test: function(t) { return t === 'Juan' } },
+    { titulo: 'Otros talleres', test: function(t) { return t !== 'Eva' && t !== 'Juan' } }
+  ]
+
+  const titulo = 'Distribucion_cortes_' + new Date().toLocaleDateString('es-AR').replace(/\//g, '-')
+  const sheet = await crearSpreadsheetMulti(token, titulo, HOJAS.map(function(h) { return h.titulo }))
+  const spreadsheetId = sheet.spreadsheetId
+
+  let requests = []
+
+  for (let hi = 0; hi < HOJAS.length; hi++) {
+    const hoja = HOJAS[hi]
+    const sheetId = sheet.sheets[hi].properties.sheetId
+    const propias = filas.filter(function(f) { return hoja.test(f.taller || 'Sin asignar') })
+    const armado = armarHojaCortes(propias, ordenTalleres, hoja.titulo)
+    await actualizarHoja(token, spreadsheetId, sheetId, hoja.titulo, armado.rows, requests)
+    requests = requests.concat(formatosHojaCortes(sheetId, armado))
+  }
 
   await aplicarFormatos(token, spreadsheetId, requests)
 
