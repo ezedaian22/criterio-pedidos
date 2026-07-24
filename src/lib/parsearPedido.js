@@ -80,7 +80,7 @@ function parsearNotaPedidoGR(items) {
       var cantidad = parseInt(cantItems[0].text)
       var precio = 0
       if (precioItems.length) {
-        try { precio = Math.round(parseFloat(precioItems[0].text.replace(/\./g,'').replace(',','.'))) } catch(e) {}
+        try { precio = Math.round(parseFloat(precioItems[0].text.replace(/\./g,'').replace(',','.')) * 100) / 100 } catch(e) {}
       }
       var descItems = fila.filter(function(i){ return /[A-Za-záéíóúÁÉÍÓÚñÑ/]/.test(i.text) && i.x >= xDesc1 && i.x <= xDesc2 })
       var descripcion = descItems.map(function(i){ return i.text }).join(' ')
@@ -165,7 +165,7 @@ function extraerPreciosGR(items) {
       if (suelta) texto = texto + ' ' + suelta.text
     }
     var clave = normCodGR(texto)
-    var val = Math.round(parseFloat(pre.text.replace(/\./g, '').replace(',', '.')))
+    var val = Math.round(parseFloat(pre.text.replace(/\./g, '').replace(',', '.')) * 100) / 100
     if (val > 0 && mapa[clave] === undefined) mapa[clave] = val
   })
   return mapa
@@ -435,7 +435,7 @@ function parsearBalbi(items, textoPDF) {
       if (fi.x < xPrimeraSuc && fi !== itemCodigo) {
         var str = fi.text.replace(/,/g, '')  // solo sacar comas de miles
         var p = parseFloat(str)
-        if (!isNaN(p) && p > 1000) precio = Math.round(p)
+        if (!isNaN(p) && p > 1000) precio = Math.round(p * 100) / 100
       }
     })
 
