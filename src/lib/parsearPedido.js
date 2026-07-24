@@ -131,12 +131,19 @@ function parsearNotaPedidoGR(items) {
   return resultado.length > 0 ? resultado : null
 }
 
+function normCodGR(c) {
+  // "1098 L" / "775L" / "128" → forma única y estable
+  return String(c || '').trim().replace(/\s+/g, ' ')
+}
+
 function extraerPreciosGR(items) {
   // Los GR con distribución traen el precio en la página "NOTA DE PEDIDO" (no en la grilla).
   // Misma fila: código (x 60-95, 2-4 díg) + precio en formato AR (x 445-478, "6.991,73").
+  // El código puede tener sufijo de letra ("775L", "1098 L") y PDF.js a veces separa la letra.
   // No depende del talle → robusto a diferencias PDF.js / pdfplumber.
   var precioRe = /^\d{1,3}(?:\.\d{3})*,\d{2}$/
-  var codRe = /^\d{1,4}$/
+  var codRe = /^\d{1,4}(?:\s*[A-Za-z]{1,2})?$/
+  var letraRe = /^[A-Za-z]{1,2}$/
   var mapa = {}
   var filas = {}
   items.forEach(function(i) {
@@ -149,20 +156,30 @@ function extraerPreciosGR(items) {
     var cod = fila.find(function(i) { return i.x >= 60 && i.x <= 95 && codRe.test(i.text) })
     var pre = fila.find(function(i) { return i.x >= 445 && i.x <= 478 && precioRe.test(i.text) })
     if (!cod || !pre) return
+    var texto = cod.text
+    // Si la letra vino como token aparte ("1098" + "L"), pegarla
+    if (/^\d{1,4}$/.test(texto)) {
+      var suelta = fila.find(function(i) {
+        return i !== cod && i.x > cod.x && i.x <= 115 && letraRe.test(i.text)
+      })
+      if (suelta) texto = texto + ' ' + suelta.text
+    }
+    var clave = normCodGR(texto)
     var val = Math.round(parseFloat(pre.text.replace(/\./g, '').replace(',', '.')))
-    if (val > 0 && mapa[cod.text] === undefined) mapa[cod.text] = val
+    if (val > 0 && mapa[clave] === undefined) mapa[clave] = val
   })
   return mapa
 }
 
 function parsearDistribucionGR(items) {
   // Normalizar: PDF.js pega "50789-004 128" (codigo-talle + codigo nuestro) en un item.
-  var codRe = /^(\d{5})[-\u2010\u2011\u2012\u2013\u2014](\d{3})\s+(\d{1,4})$/
+  // El código nuestro puede llevar sufijo de letra: "1098 L", "775L".
+  var codRe = /^(\d{5})[-\u2010\u2011\u2012\u2013\u2014](\d{3})\s+(\d{1,4}(?:\s*[A-Za-z]{1,2})?)$/
   var codigosTalle = []  // { codCliente, talle, codNuestro, x, y }
   items.forEach(function(i) {
     var m = i.text.match(codRe)
     if (m) {
-      codigosTalle.push({ codCliente: m[1], talle: String(parseInt(m[2])), codNuestro: m[3], x: i.x, y: i.y, page: i.page })
+      codigosTalle.push({ codCliente: m[1], talle: String(parseInt(m[2])), codNuestro: normCodGR(m[3]), x: i.x, y: i.y, page: i.page })
     }
   })
   // Fallback: código-talle sin codNuestro pegado (por si viene separado)
@@ -173,114 +190,128 @@ function parsearDistribucionGR(items) {
         // buscar codNuestro cerca en el mismo Y
         var cn = null
         items.forEach(function(j) {
-          if (!cn && Math.abs(j.y - i.y) <= 6 && j.x > i.x && j.x < i.x + 80 && /^\d{1,4}$/.test(j.text)) cn = j.text
+          if (!cn && Math.abs(j.y - i.y) <= 6 && j.x > i.x && j.x < i.x + 80 && /^\d{1,4}(?:\s*[A-Za-z]{1,2})?$/.test(j.text)) cn = j.text
         })
-        codigosTalle.push({ codCliente: m[1], talle: String(parseInt(m[2])), codNuestro: cn || m[1], x: i.x, y: i.y, page: i.page })
+        codigosTalle.push({ codCliente: m[1], talle: String(parseInt(m[2])), codNuestro: normCodGR(cn || m[1]), x: i.x, y: i.y, page: i.page })
       }
     })
   }
   if (codigosTalle.length === 0) return null
 
-  // Detectar la COLUMNA de sucursales de forma robusta.
-  // Las sucursales son números de 2 dígitos alineados verticalmente (X similar).
-  // Agrupamos por X con tolerancia real (no redondeo fijo) y tomamos el grupo más grande.
-  var dosDig = items.filter(function(i) { return /^\d{2}$/.test(i.text) && i.page === codigosTalle[0].page })
-  dosDig.sort(function(a,b){ return a.x - b.x })
-  // Agrupar en columnas: items cuyo X difiere < 10px forman la misma columna
-  var columnas = []
-  dosDig.forEach(function(it) {
-    var col = null
-    for (var k = 0; k < columnas.length; k++) {
-      if (Math.abs(columnas[k].xProm - it.x) < 10) { col = columnas[k]; break }
-    }
-    if (!col) { col = { xProm: it.x, items: [] }; columnas.push(col) }
-    col.items.push(it)
-    // recalcular X promedio
-    col.xProm = col.items.reduce(function(s,i){ return s+i.x }, 0) / col.items.length
-  })
-  // La columna de sucursales es la que tiene MÁS items (la lista vertical de sucursales)
-  var colSucsObj = columnas.reduce(function(mejor, c){ return c.items.length > (mejor ? mejor.items.length : 0) ? c : mejor }, null)
-  var colSucs = colSucsObj ? colSucsObj.items : []
-  if (colSucs.length < 5) return null
-
-  // Mapa: cada sucursal en su Y, ordenadas por Y ascendente
-  var sucPorY = colSucs.map(function(i) { return { y: i.y, suc: i.text } }).sort(function(a,b){ return a.y - b.y })
-  var pasoY = sucPorY.length > 1 ? Math.abs(sucPorY[1].y - sucPorY[0].y) : 36
-  var tolY = Math.max(8, pasoY * 0.6)
-
-  // Las columnas de código-talle están muy juntas (~14px). Para evitar que una columna
-  // agarre cantidades de la vecina, calculamos el paso X entre columnas y usamos la mitad
-  // como tolerancia, asignando cada número a la columna de código MÁS CERCANA.
-  var xsCodigos = codigosTalle.map(function(c){ return c.x }).sort(function(a,b){ return a-b })
-  var pasoX = 999
-  for (var xi = 1; xi < xsCodigos.length; xi++) {
-    var dx = xsCodigos[xi] - xsCodigos[xi-1]
-    if (dx > 2 && dx < pasoX) pasoX = dx
-  }
-  if (pasoX === 999) pasoX = 14
-  var tolX = Math.max(4, Math.floor(pasoX / 2))
-
   var articulos = {}
   var ordenArt = []
 
-  // Precalcular todos los números candidatos (cantidades) de la zona de distribución
-  var pageDist = codigosTalle[0].page
-  var todosNums = items.filter(function(i) {
-    return /^\d{1,4}$/.test(i.text) && i.page === pageDist
-  })
+  // La distribución puede ocupar VARIAS páginas (Hoja 1, Hoja 2...). Cada página tiene su
+  // propia columna de sucursales y sus propias cantidades → se procesa una por una y se
+  // acumula por artículo (un artículo puede tener talles repartidos entre dos hojas).
+  var paginas = []
+  codigosTalle.forEach(function(c) { if (paginas.indexOf(c.page) === -1) paginas.push(c.page) })
 
-  codigosTalle.forEach(function(ct) {
-    var colX = ct.x
-    var codNuestro = ct.codNuestro
+  paginas.forEach(function(pag) {
+    var ctsPag = codigosTalle.filter(function(c) { return c.page === pag })
+    if (ctsPag.length === 0) return
 
-    // Números que pertenecen a ESTA columna: su X más cercana es la de este código-talle
-    var numsColumna = todosNums.filter(function(num) {
-      if (Math.abs(num.y - ct.y) <= 6) return false  // excluir fila del código
-      if (Math.abs(num.x - colX) > tolX) return false  // debe estar dentro de tolX
-      // verificar que ESTE código es el más cercano en X (no una columna vecina)
-      var miDost = Math.abs(num.x - colX)
-      var hayMasCercano = codigosTalle.some(function(otro) {
-        return otro !== ct && Math.abs(num.x - otro.x) < miDost
-      })
-      return !hayMasCercano
+    // Detectar la COLUMNA de sucursales de ESTA página de forma robusta.
+    // Las sucursales son números de 2 dígitos alineados verticalmente (X similar).
+    // Agrupamos por X con tolerancia real (no redondeo fijo) y tomamos el grupo más grande.
+    var dosDig = items.filter(function(i) { return /^\d{2}$/.test(i.text) && i.page === pag })
+    dosDig.sort(function(a,b){ return a.x - b.x })
+    // Agrupar en columnas: items cuyo X difiere < 10px forman la misma columna
+    var columnas = []
+    dosDig.forEach(function(it) {
+      var col = null
+      for (var k = 0; k < columnas.length; k++) {
+        if (Math.abs(columnas[k].xProm - it.x) < 10) { col = columnas[k]; break }
+      }
+      if (!col) { col = { xProm: it.x, items: [] }; columnas.push(col) }
+      col.items.push(it)
+      // recalcular X promedio
+      col.xProm = col.items.reduce(function(s,i){ return s+i.x }, 0) / col.items.length
+    })
+    // La columna de sucursales es la que tiene MÁS items (la lista vertical de sucursales)
+    var colSucsObj = columnas.reduce(function(mejor, c){ return c.items.length > (mejor ? mejor.items.length : 0) ? c : mejor }, null)
+    var colSucs = colSucsObj ? colSucsObj.items : []
+    if (colSucs.length < 5) return  // esta página no tiene grilla de distribución
+
+    // Mapa: cada sucursal en su Y, ordenadas por Y ascendente
+    var sucPorY = colSucs.map(function(i) { return { y: i.y, suc: i.text } }).sort(function(a,b){ return a.y - b.y })
+    var pasoY = sucPorY.length > 1 ? Math.abs(sucPorY[1].y - sucPorY[0].y) : 36
+    var tolY = Math.max(8, pasoY * 0.6)
+
+    // Las columnas de código-talle están muy juntas (~14px). Para evitar que una columna
+    // agarre cantidades de la vecina, calculamos el paso X entre columnas y usamos la mitad
+    // como tolerancia, asignando cada número a la columna de código MÁS CERCANA.
+    var xsCodigos = ctsPag.map(function(c){ return c.x }).sort(function(a,b){ return a-b })
+    var pasoX = 999
+    for (var xi = 1; xi < xsCodigos.length; xi++) {
+      var dx = xsCodigos[xi] - xsCodigos[xi-1]
+      if (dx > 2 && dx < pasoX) pasoX = dx
+    }
+    if (pasoX === 999) pasoX = 14
+    var tolX = Math.max(4, Math.floor(pasoX / 2))
+
+    // Precalcular todos los números candidatos (cantidades) de ESTA página
+    var todosNums = items.filter(function(i) {
+      return /^\d{1,4}$/.test(i.text) && i.page === pag
     })
 
-    // Descripción
-    var desc = items.filter(function(i) {
-      return /[A-Za-z]/.test(i.text) && Math.abs(i.x - colX) <= tolX && i.page === ct.page
-    }).sort(function(a,b){ return a.y - b.y }).map(function(i){ return i.text }).join(' ')
+    ctsPag.forEach(function(ct) {
+      var colX = ct.x
+      var codNuestro = ct.codNuestro
 
-    if (!articulos[codNuestro]) {
-      articulos[codNuestro] = {
-        codigo_nuestro: codNuestro,
-        codigo_cliente: ct.codCliente,
-        descripcion_cliente: desc,
-        precio_unitario: 0,
-        talles_articulo: [],
-        sucursales: {},
-        total_unidades: 0,
-        modulos: []
-      }
-      ordenArt.push(codNuestro)
-    }
-    var art = articulos[codNuestro]
-    if (art.talles_articulo.indexOf(ct.talle) === -1) art.talles_articulo.push(ct.talle)
-
-    numsColumna.forEach(function(num) {
-      var mejor = null, mejorDist = 999
-      sucPorY.forEach(function(s) {
-        var d = Math.abs(s.y - num.y)
-        if (d < mejorDist) { mejorDist = d; mejor = s }
+      // Números que pertenecen a ESTA columna: su X más cercana es la de este código-talle
+      var numsColumna = todosNums.filter(function(num) {
+        if (Math.abs(num.y - ct.y) <= 6) return false  // excluir fila del código
+        if (Math.abs(num.x - colX) > tolX) return false  // debe estar dentro de tolX
+        // verificar que ESTE código es el más cercano en X (no una columna vecina)
+        var miDost = Math.abs(num.x - colX)
+        var hayMasCercano = ctsPag.some(function(otro) {
+          return otro !== ct && Math.abs(num.x - otro.x) < miDost
+        })
+        return !hayMasCercano
       })
-      if (!mejor || mejorDist > tolY || mejor.suc === 'TOTAL') return
-      var cant = parseInt(num.text)
-      if (cant <= 0) return
-      if (!art.sucursales[mejor.suc]) {
-        art.sucursales[mejor.suc] = { nro_sucursal: mejor.suc, cantidad: 0, talles: {} }
+
+      // Descripción (sin el propio token de código-talle, que ahora puede traer letras)
+      var desc = items.filter(function(i) {
+        if (!/[A-Za-z]/.test(i.text)) return false
+        if (Math.abs(i.x - colX) > tolX) return false
+        if (i.page !== ct.page) return false
+        if (codRe.test(i.text)) return false
+        return true
+      }).sort(function(a,b){ return a.y - b.y }).map(function(i){ return i.text }).join(' ')
+
+      if (!articulos[codNuestro]) {
+        articulos[codNuestro] = {
+          codigo_nuestro: codNuestro,
+          codigo_cliente: ct.codCliente,
+          descripcion_cliente: desc,
+          precio_unitario: 0,
+          talles_articulo: [],
+          sucursales: {},
+          total_unidades: 0,
+          modulos: []
+        }
+        ordenArt.push(codNuestro)
       }
-      art.sucursales[mejor.suc].talles[ct.talle] = cant
-      art.sucursales[mejor.suc].cantidad += cant
-      art.total_unidades += cant
+      var art = articulos[codNuestro]
+      if (art.talles_articulo.indexOf(ct.talle) === -1) art.talles_articulo.push(ct.talle)
+
+      numsColumna.forEach(function(num) {
+        var mejor = null, mejorDist = 999
+        sucPorY.forEach(function(s) {
+          var d = Math.abs(s.y - num.y)
+          if (d < mejorDist) { mejorDist = d; mejor = s }
+        })
+        if (!mejor || mejorDist > tolY || mejor.suc === 'TOTAL') return
+        var cant = parseInt(num.text)
+        if (cant <= 0) return
+        if (!art.sucursales[mejor.suc]) {
+          art.sucursales[mejor.suc] = { nro_sucursal: mejor.suc, cantidad: 0, talles: {} }
+        }
+        art.sucursales[mejor.suc].talles[ct.talle] = cant
+        art.sucursales[mejor.suc].cantidad += cant
+        art.total_unidades += cant
+      })
     })
   })
 
