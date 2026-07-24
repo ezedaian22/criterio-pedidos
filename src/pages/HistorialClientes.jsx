@@ -5,6 +5,9 @@ import { formatFecha } from '../lib/utils'
 
 const TEMPORADAS = ['Verano', 'Invierno']
 
+// El total del PDF del cliente viene con IVA; el neto es lo que se guarda por artículo
+const IVA = 0.21
+
 // Años disponibles para elegir: del 2024 hasta dos años adelante
 function aniosDisponibles() {
   const hoy = new Date().getFullYear()
@@ -80,7 +83,8 @@ export default function HistorialClientes({ session, onVolver }) {
     const bruto = arts.reduce((s, a) => s + (Number(a.precio_unitario) || 0) * (Number(a.total_unidades) || 0), 0)
     const desc = Number(p.descuento) || 0
     const neto = bruto * (1 - desc / 100)
-    return { unidades, bruto, neto, desc, cantArticulos: arts.length }
+    const conIva = neto * (1 + IVA)
+    return { unidades, bruto, neto, conIva, desc, cantArticulos: arts.length }
   }
 
   function etiquetaTemporada(p) {
@@ -138,12 +142,13 @@ export default function HistorialClientes({ session, onVolver }) {
   }
 
   // Total general
-  let genUnidades = 0, genBruto = 0, genNeto = 0
+  let genUnidades = 0, genBruto = 0, genNeto = 0, genIva = 0
   filtrados.forEach(p => {
     const t = totalesPedido(p)
     genUnidades += t.unidades
     genBruto += t.bruto
     genNeto += t.neto
+    genIva += t.conIva
   })
 
   const opcionesTemporada = []
@@ -229,6 +234,7 @@ export default function HistorialClientes({ session, onVolver }) {
             <Dato etiqueta="Unidades" valor={genUnidades.toLocaleString('es-AR')} />
             <Dato etiqueta="Total bruto" valor={plata(genBruto)} />
             <Dato etiqueta="Con descuento" valor={plata(genNeto)} destacado />
+            <Dato etiqueta="Total c/ IVA" valor={plata(genIva)} iva />
           </div>
         </div>
       )}
@@ -241,10 +247,10 @@ export default function HistorialClientes({ session, onVolver }) {
         </p>
       ) : nombresGrupo.map(nombre => {
         const lista = grupos[nombre]
-        let cUnid = 0, cBruto = 0, cNeto = 0
+        let cUnid = 0, cBruto = 0, cNeto = 0, cIva = 0
         lista.forEach(p => {
           const t = totalesPedido(p)
-          cUnid += t.unidades; cBruto += t.bruto; cNeto += t.neto
+          cUnid += t.unidades; cBruto += t.bruto; cNeto += t.neto; cIva += t.conIva
         })
 
         return (
@@ -259,6 +265,7 @@ export default function HistorialClientes({ session, onVolver }) {
                 <Dato etiqueta="Unidades" valor={cUnid.toLocaleString('es-AR')} chico />
                 <Dato etiqueta="Bruto" valor={plata(cBruto)} chico />
                 <Dato etiqueta="Con desc." valor={plata(cNeto)} chico destacado />
+                <Dato etiqueta="C/ IVA" valor={plata(cIva)} chico iva />
               </div>
             </div>
 
@@ -296,6 +303,10 @@ export default function HistorialClientes({ session, onVolver }) {
                       </span>
                       <span style={{ color: '#4ade80', fontWeight: 800, fontSize: '0.88rem', minWidth: '7rem', textAlign: 'right' }}>
                         {plata(t.neto)}
+                      </span>
+                      <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.88rem', minWidth: '7.5rem', textAlign: 'right' }}
+                        title="Total con IVA — es el que coincide con el PDF del cliente">
+                        {plata(t.conIva)}
                       </span>
                       {t.desc > 0 && (
                         <span style={{ color: '#fbbf24', fontSize: '0.72rem' }}>−{t.desc}%</span>
@@ -365,18 +376,18 @@ export default function HistorialClientes({ session, onVolver }) {
 // ─── Auxiliares ───────────────────────────────────────────────────────────────
 
 function plata(n) {
-  const v = Math.round(Number(n) || 0)
-  return '$' + v.toLocaleString('es-AR')
+  const v = Math.round((Number(n) || 0) * 100) / 100
+  return '$' + v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function Dato({ etiqueta, valor, chico, destacado }) {
+function Dato({ etiqueta, valor, chico, destacado, iva }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <span style={{ color: '#8b9dc3', fontSize: chico ? '0.68rem' : '0.72rem', letterSpacing: '0.04em' }}>
         {etiqueta.toUpperCase()}
       </span>
       <span style={{
-        color: destacado ? '#4ade80' : '#fff',
+        color: iva ? '#fbbf24' : (destacado ? '#4ade80' : '#fff'),
         fontSize: chico ? '0.85rem' : '1.05rem',
         fontWeight: 800
       }}>
