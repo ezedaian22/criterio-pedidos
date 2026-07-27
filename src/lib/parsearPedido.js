@@ -132,8 +132,14 @@ function parsearNotaPedidoGR(items) {
 }
 
 function normCodGR(c) {
-  // "1098 L" / "775L" / "128" → forma única y estable
-  return String(c || '').trim().replace(/\s+/g, ' ')
+  // Unifica el código a NÚMERO+LETRA (mayúscula), sin importar si la letra
+  // vino antes o después: "775L" / "L775" / "L 775" / "775 L" → "775L". "128" → "128".
+  var s = String(c || '').trim().replace(/\s+/g, ' ').toUpperCase()
+  var m = s.match(/^([A-Z]{1,2})\s*(\d{1,4})$/)   // letra adelante
+  if (m) return m[2] + m[1]
+  m = s.match(/^(\d{1,4})\s*([A-Z]{1,2})$/)        // letra atrás
+  if (m) return m[1] + m[2]
+  return s
 }
 
 function extraerPreciosGR(items) {
@@ -142,7 +148,7 @@ function extraerPreciosGR(items) {
   // El código puede tener sufijo de letra ("775L", "1098 L") y PDF.js a veces separa la letra.
   // No depende del talle → robusto a diferencias PDF.js / pdfplumber.
   var precioRe = /^\d{1,3}(?:\.\d{3})*,\d{2}$/
-  var codRe = /^\d{1,4}(?:\s*[A-Za-z]{1,2})?$/
+  var codRe = /^(?:[A-Za-z]{1,2}\s*\d{1,4}|\d{1,4}\s*[A-Za-z]{1,2}|\d{1,4})$/
   var letraRe = /^[A-Za-z]{1,2}$/
   var mapa = {}
   var filas = {}
@@ -174,7 +180,7 @@ function extraerPreciosGR(items) {
 function parsearDistribucionGR(items) {
   // Normalizar: PDF.js pega "50789-004 128" (codigo-talle + codigo nuestro) en un item.
   // El código nuestro puede llevar sufijo de letra: "1098 L", "775L".
-  var codRe = /^(\d{5})[-\u2010\u2011\u2012\u2013\u2014](\d{3})\s+(\d{1,4}(?:\s*[A-Za-z]{1,2})?)$/
+  var codRe = /^(\d{5})[-\u2010\u2011\u2012\u2013\u2014](\d{3})\s+((?:[A-Za-z]{1,2}\s*)?\d{1,4}(?:\s*[A-Za-z]{1,2})?)$/
   var codigosTalle = []  // { codCliente, talle, codNuestro, x, y }
   items.forEach(function(i) {
     var m = i.text.match(codRe)
@@ -190,7 +196,7 @@ function parsearDistribucionGR(items) {
         // buscar codNuestro cerca en el mismo Y
         var cn = null
         items.forEach(function(j) {
-          if (!cn && Math.abs(j.y - i.y) <= 6 && j.x > i.x && j.x < i.x + 80 && /^\d{1,4}(?:\s*[A-Za-z]{1,2})?$/.test(j.text)) cn = j.text
+          if (!cn && Math.abs(j.y - i.y) <= 6 && j.x > i.x && j.x < i.x + 80 && /^(?:[A-Za-z]{1,2}\s*)?\d{1,4}(?:\s*[A-Za-z]{1,2})?$/.test(j.text)) cn = j.text
         })
         codigosTalle.push({ codCliente: m[1], talle: String(parseInt(m[2])), codNuestro: normCodGR(cn || m[1]), x: i.x, y: i.y, page: i.page })
       }
