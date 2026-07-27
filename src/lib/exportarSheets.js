@@ -10,7 +10,36 @@
  *  3. Crear Spreadsheet con los datos → devuelve la URL.
  */
 
+import { supabase } from './supabase'
+
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file'
+
+// Client ID de Google: primero de la base (pedidos.config_app), luego de localStorage.
+// Así no hay que volver a cargarlo cuando se limpia el navegador.
+async function obtenerClientId() {
+  // 1) localStorage (rápido, y respaldo si la base no responde)
+  var local = null
+  try { local = localStorage.getItem('criterio_google_client_id') } catch (e) {}
+
+  // 2) base de datos (fuente principal)
+  try {
+    var resp = await supabase
+      .from('config_app')
+      .select('google_client_id')
+      .eq('id', 1)
+      .maybeSingle()
+    if (!resp.error && resp.data && resp.data.google_client_id) {
+      var idBase = String(resp.data.google_client_id).trim()
+      if (idBase) {
+        // cachear para la próxima vez
+        try { localStorage.setItem('criterio_google_client_id', idBase) } catch (e) {}
+        return idBase
+      }
+    }
+  } catch (e) { /* si falla la base, usamos el local */ }
+
+  return local
+}
 
 // ─── Token management ────────────────────────────────────────────────────────
 
@@ -48,7 +77,7 @@ function loadGIS() {
 }
 
 export async function autenticarGoogle() {
-  const clientId = localStorage.getItem('criterio_google_client_id')
+  const clientId = await obtenerClientId()
   if (!clientId) throw new Error('Falta el Google Client ID. Configuralo en Ajustes.')
 
   await loadGIS()
