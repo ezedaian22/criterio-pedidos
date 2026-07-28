@@ -12,6 +12,15 @@ const IVA = 0.21
 const BALBI_DESC = 0.25
 const BALBI_CONTADO = 0.05
 
+// Normaliza el código igual que el parser y la vista de costos:
+// mayúsculas, sin espacios, letra al final ("1098 L"/"L1098" → "1098L").
+function normCod(c) {
+  var s = String(c || '').toUpperCase().replace(/\s+/g, '')
+  var m = s.match(/^([A-Z]{1,2})(\d{1,4})$/)
+  if (m) return m[2] + m[1]
+  return s
+}
+
 function nombreCliente(p) {
   return (p.clientes && p.clientes.nombre) ? p.clientes.nombre : ''
 }
@@ -31,12 +40,25 @@ export default function Ganancia({ session, onVolver }) {
   const [error, setError] = useState('')
   const [clienteFiltro, setClienteFiltro] = useState('')
   const [expandido, setExpandido] = useState([])
+  const [alias, setAlias] = useState({})
+  const [editandoAlias, setEditandoAlias] = useState(null)
+  const [aliasInput, setAliasInput] = useState('')
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
     setCargando(true)
     try {
+      // Alias de costo (código de pedido → código de costos)
+      try {
+        const resA = await supabase.from('alias_costo').select('codigo_pedido, codigo_costo')
+        if (!resA.error && resA.data) {
+          const mapaA = {}
+          resA.data.forEach(r => { mapaA[normCod(r.codigo_pedido)] = normCod(r.codigo_costo) })
+          setAlias(mapaA)
+        }
+      } catch (e) { /* la tabla puede no existir todavía */ }
+
       const { data, error } = await supabase
         .from('pedidos')
         .select('id, numero_pedido, fecha_pedido, fecha_entrega, estado, clientes(nombre), pedido_articulos(id, codigo_nuestro, descripcion_cliente, descripcion_correcta, precio_unitario, total_unidades)')
@@ -48,7 +70,7 @@ export default function Ganancia({ session, onVolver }) {
       // Traer el costo de todos los códigos que aparecen
       const codigos = []
       lista.forEach(p => (p.pedido_articulos || []).forEach(a => {
-        const c = String(a.codigo_nuestro || '')
+        const c = normCod(a.codigo_nuestro)
         if (c && codigos.indexOf(c) === -1) codigos.push(c)
       }))
       if (codigos.length) {
@@ -75,7 +97,8 @@ export default function Ganancia({ session, onVolver }) {
   }
 
   // Ganancia de un pedido: por artículo aplica la fórmula del cliente
-  function calcular(p) {
+  function calcular(p, aliasRef) {
+    aliasRef = aliasRef || {}
     const cli = nombreCliente(p)
     const fv = factorVenta(cli)
     let ventaNeta = 0, costoTotal = 0, unidades = 0, sinCosto = 0
@@ -84,7 +107,9 @@ export default function Ganancia({ session, onVolver }) {
       const u = Number(a.total_unidades) || 0
       const precio = Number(a.precio_unitario) || 0
       const ventaU = precio * fv.factor
-      const costoU = costos[String(a.codigo_nuestro)]
+      const codNorm = normCod(a.codigo_nuestro)
+      const codParaCosto = aliasRef[codNorm] || codNorm
+      const costoU = costos[codParaCosto]
       const tieneCosto = costoU !== undefined
       if (!tieneCosto) sinCosto += 1
       const cU = tieneCosto ? costoU : 0
@@ -96,6 +121,8 @@ export default function Ganancia({ session, onVolver }) {
       detalle.push({
         id: a.id,
         codigo: a.codigo_nuestro,
+        codigoPedido: codNorm,
+        aliasUsado: aliasRef[codNorm] || null,
         descripcion: a.descripcion_correcta || a.descripcion_cliente || '',
         unidades: u,
         precio: precio,
@@ -109,6 +136,39 @@ export default function Ganancia({ session, onVolver }) {
     const margen = ventaNeta > 0 ? (ganancia / ventaNeta) * 100 : 0
     const gananciaPorPrenda = unidades > 0 ? ganancia / unidades : 0
     return { tipo: fv.tipo, ventaNeta, costoTotal, ganancia, margen, unidades, gananciaPorPrenda, sinCosto, detalle }
+  }
+
+  async function guardarAlias(codigoPedido) {
+    const destino = normCod(aliasInput)
+    if (!destino) { setEditandoAlias(null); return }
+    const origen = normCod(codigoPedido)
+    try {
+      const { error } = await supabase.from('alias_costo')
+        .upsert({ codigo_pedido: origen, codigo_costo: destino, actualizado: new Date().toISOString() }, { onConflict: 'codigo_pedido' })
+      if (error) throw error
+      // traer el costo del código destino si aún no lo tengo
+      if (costos[destino] === undefined) {
+        const resC = await supabaseCostos.from('costo_articulo').select('codigo, costo_total').eq('codigo', destino).maybeSingle()
+        if (!resC.error && resC.data) {
+          setCostos(prev => ({ ...prev, [destino]: Number(resC.data.costo_total) || 0 }))
+        }
+      }
+      setAlias(prev => ({ ...prev, [origen]: destino }))
+      setEditandoAlias(null)
+      setAliasInput('')
+      setError('')
+    } catch (err) {
+      console.error(err)
+      setError(err.message || 'No se pudo guardar el alias')
+    }
+  }
+
+  async function borrarAlias(codigoPedido) {
+    const origen = normCod(codigoPedido)
+    try {
+      await supabase.from('alias_costo').delete().eq('codigo_pedido', origen)
+      setAlias(prev => { const c = { ...prev }; delete c[origen]; return c })
+    } catch (err) { console.error(err) }
   }
 
   const clientes = []
@@ -159,7 +219,7 @@ export default function Ganancia({ session, onVolver }) {
           No hay pedidos.
         </p>
       ) : filtrados.map(p => {
-        const r = calcular(p)
+        const r = calcular(p, alias)
         const abierto = expandido.includes(p.id)
         const margenColor = r.margen >= 40 ? '#4ade80' : (r.margen >= 20 ? '#fbbf24' : '#fca5a5')
         return (
@@ -194,8 +254,35 @@ export default function Ganancia({ session, onVolver }) {
                     <span style={{ color: '#c8d8ff', fontSize: '0.78rem', minWidth: '5.5rem', textAlign: 'right' }} title="venta neta por prenda">
                       {plata(d.ventaU)} v/u
                     </span>
-                    <span style={{ color: d.tieneCosto ? '#8b9dc3' : '#fbbf24', fontSize: '0.78rem', minWidth: '5.5rem', textAlign: 'right' }} title="costo por prenda">
-                      {d.tieneCosto ? plata(d.costoU) + ' c/u' : 'sin costo'}
+                    <span style={{ color: d.tieneCosto ? '#8b9dc3' : '#fbbf24', fontSize: '0.78rem', minWidth: '5.5rem', textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }} title="costo por prenda">
+                      {editandoAlias === d.codigoPedido ? (
+                        <span style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            placeholder="código en Costos"
+                            value={aliasInput}
+                            onChange={e => setAliasInput(e.target.value)}
+                            style={{ backgroundColor: '#1a1f35', color: '#fff', border: '1px solid #3b5bdb', borderRadius: '0.3rem', padding: '0.15rem 0.35rem', fontSize: '0.72rem', width: '6rem' }}
+                          />
+                          <button onClick={() => guardarAlias(d.codigoPedido)} style={estiloMini}>✓</button>
+                          <button onClick={() => { setEditandoAlias(null); setAliasInput('') }} style={estiloLink}>✕</button>
+                        </span>
+                      ) : d.tieneCosto ? (
+                        <span>
+                          {plata(d.costoU)} c/u
+                          {d.aliasUsado && <span style={{ color: '#7c3aed', fontSize: '0.66rem', display: 'block' }}>← usa {d.aliasUsado}</span>}
+                          <button onClick={() => { setAliasInput(d.aliasUsado || ''); setEditandoAlias(d.codigoPedido) }} style={{ ...estiloLink, display: 'block' }}>
+                            {d.aliasUsado ? 'cambiar' : 'usar otro'}
+                          </button>
+                        </span>
+                      ) : (
+                        <span>
+                          <span style={{ color: '#fbbf24' }}>sin costo</span>
+                          <button onClick={() => { setAliasInput(''); setEditandoAlias(d.codigoPedido) }} style={{ ...estiloLink, display: 'block', color: '#7c3aed' }}>
+                            usar costo de otro art
+                          </button>
+                        </span>
+                      )}
                     </span>
                     <span style={{ color: d.gananciaU >= 0 ? '#4ade80' : '#fca5a5', fontWeight: 700, fontSize: '0.82rem', minWidth: '6rem', textAlign: 'right' }}>
                       {plata(d.gananciaU)} g/u
@@ -253,6 +340,27 @@ const estiloBotonSec = {
   fontSize: '0.8rem',
   fontWeight: 600,
   cursor: 'pointer'
+}
+
+const estiloMini = {
+  backgroundColor: '#14746b',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '0.3rem',
+  padding: '0.15rem 0.4rem',
+  fontSize: '0.72rem',
+  fontWeight: 800,
+  cursor: 'pointer'
+}
+
+const estiloLink = {
+  background: 'none',
+  border: 'none',
+  color: '#8b9dc3',
+  fontSize: '0.68rem',
+  textDecoration: 'underline',
+  cursor: 'pointer',
+  padding: '0.1rem 0'
 }
 
 const estiloInput = {
