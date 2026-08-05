@@ -546,6 +546,105 @@ async function imagenesDeHoja(zip, wsPath) {
   return out
 }
 
+// ─── Módulos de Sucati en HOJA APARTE (ej. hoja "MODULOS" del pedido de blusas) ───
+// La hoja trae los bloques en grilla: varios módulos por fila, en distintas columnas.
+//   fila r    → título "MÓDULO ART <cod> X <n> UNIDADES"  (puede ser "704L/718L")
+//   fila r+1  → talles (4, 6, 8, 10, 12)
+//   fila r+2… → una variante por fila: nombre + su CURVA por talle
+// La cantidad de la variante es la SUMA de su curva, no el primer número.
+var COLORES_SUCATI = [
+  'negro','blanco','off white','oof white','crudo','tiza','hueso','marfil',
+  'bordo','vino','rojo','coral','fucsia','rosa','rosado','salmon','salmón',
+  'militar','verde','oliva','marino','azul','celeste','petroleo','petróleo',
+  'choco','chocolate','marron','marrón','camel','tostado','beige','arena','nude',
+  'gris','plomo','amarillo','mostaza','naranja','violeta','lila','morado','turquesa','ladrillo','terracota'
+]
+
+function esNombreDeColor(nombre) {
+  var n = String(nombre || '').toLowerCase().trim()
+  if (!n) return false
+  return COLORES_SUCATI.some(function(c) {
+    return n === c || n.indexOf(c) !== -1
+  })
+}
+
+function parsearModulosSucati(rowsMod, codigosPedido) {
+  var out = {}
+  if (!rowsMod || !rowsMod.length) return out
+
+  // 1) Ubicar todos los títulos de módulo con su posición (fila, columna)
+  var bloques = []
+  for (var r = 0; r < rowsMod.length; r++) {
+    var row = rowsMod[r] || []
+    for (var c = 0; c < row.length; c++) {
+      var v = row[c]
+      if (v === null || v === undefined || String(v).trim() === '') continue
+      // Acepta códigos con letra y con barra: "753L", "704L/718L"
+      var m = String(v).match(/m[oó]dulo\s+art\s+([A-Za-z0-9\/\s.\-]+?)\s+x\s*(\d+)/i)
+      if (m) {
+        bloques.push({
+          cods: m[1].split('/').map(function(s) { return s.trim() }).filter(Boolean),
+          modulo: parseInt(m[2]),
+          r: r, c: c
+        })
+      }
+    }
+  }
+
+  // 2) Para cada bloque: leer talles y variantes dentro de SU rango de columnas
+  bloques.forEach(function(b) {
+    var filaTalles = rowsMod[b.r + 1] || []
+    var talles = []
+    for (var c = b.c + 1; c < filaTalles.length; c++) {
+      var tv = filaTalles[c]
+      if (tv === null || tv === undefined || String(tv).trim() === '') break
+      var tn = parseInt(tv)
+      if (isNaN(tn)) break
+      talles.push({ col: c, talle: String(tn) })
+    }
+    if (!talles.length) return
+
+    var variantes = []
+    for (var rr = b.r + 2; rr < rowsMod.length; rr++) {
+      var fila = rowsMod[rr] || []
+      var nom = fila[b.c]
+      if (nom === null || nom === undefined || String(nom).trim() === '') break
+      var nombre = String(nom).trim()
+      if (/m[oó]dulo\s+art/i.test(nombre)) break
+
+      var curva = {}
+      var total = 0
+      talles.forEach(function(t) {
+        var q = parseInt(fila[t.col])
+        if (!isNaN(q) && q > 0) { curva[t.talle] = q; total += q }
+      })
+      if (total <= 0) continue
+
+      var color = esNombreDeColor(nombre)
+      variantes.push({
+        nombre: nombre,
+        cantidad: total,
+        curva_talles: curva,
+        es_estampa: !color,
+        imagen_url: null
+      })
+    }
+    if (!variantes.length) return
+
+    // 3) Solo se le da entidad al módulo si su código está en la nota de pedido
+    b.cods.forEach(function(cod) {
+      if (codigosPedido && codigosPedido.indexOf(cod) === -1) return
+      out[cod] = {
+        modulo: b.modulo,
+        talles: talles.map(function(t) { return t.talle }),
+        variantes: variantes.map(function(v) { return Object.assign({}, v) })
+      }
+    })
+  })
+
+  return out
+}
+
 async function parsearSucatiXLS(archivo, supabaseClient) {
   // Usar arrayBuffer() nativo en lugar de FileReader para mayor compatibilidad
   try {
@@ -742,12 +841,45 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           }
         }
 
+        // ── Módulos en HOJA APARTE (pedidos tipo blusas: hoja "MODULOS") ──
+        // Si el workbook trae una hoja de módulos propia, se usa esa. Si no, sigue
+        // el camino de siempre (sacos/remeras traen los módulos en la misma hoja).
+        var modsAparte = null
+        var nombreHojaMods = wb.SheetNames.find(function(n) {
+          return /m[oó]dulos?/i.test(n) && !/nota de pedido/i.test(n)
+        })
+        if (nombreHojaMods) {
+          var rowsMods = XLSX.utils.sheet_to_json(wb.Sheets[nombreHojaMods], { header: 1, defval: null, raw: true })
+          var codigosPedido = Object.keys(articulos)
+          var parseados = parsearModulosSucati(rowsMods, codigosPedido)
+          if (Object.keys(parseados).length > 0) modsAparte = parseados
+        }
+
+        if (modsAparte) {
+          Object.keys(modsAparte).forEach(function(cod) {
+            if (!articulos[cod]) return
+            var m = modsAparte[cod]
+            articulos[cod].variantes = m.variantes
+            articulos[cod].modulos = [{
+              descripcion: 'Módulo x' + m.modulo + ' unidades',
+              unidades_por_caja: m.modulo,
+              curva_talles: m.variantes.length === 1 ? m.variantes[0].curva_talles : null
+            }]
+          })
+          // Los artículos del pedido SIN módulo van "todo parejo"
+          Object.keys(articulos).forEach(function(cod) {
+            if (!modsAparte[cod]) articulos[cod].sin_modulo = true
+          })
+        }
+
         // Leer variantes de los módulos (debajo del encabezado)
-        var artActual = null
+        var artActual = modsAparte ? '__NINGUNO__' : null
         for (var i = headerRowIdx + 1; i < rows.length; i++) {
           var row = rows[i]
           if (!row) continue
           var textFila = row.filter(Boolean).map(String).join(' ')
+
+          if (modsAparte) continue   // ya se leyeron de la hoja de módulos
 
           var mMod = textFila.match(/m[oó]dulo\s+art\s+(\d+)/i)
           if (mMod) { artActual = mMod[1]; continue }
