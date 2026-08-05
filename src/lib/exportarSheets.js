@@ -615,7 +615,7 @@ function armarHojaCortes(filas, ordenTalleres, tituloHoja) {
   rows.push(['Generado', new Date().toLocaleDateString('es-AR')])
   rows.push([])
 
-  const header = ['Taller', 'Artículo', 'Descripción', 'Cliente', 'Fecha entrega', 'Unidades', 'Tela', 'Cant. tela']
+  const header = ['Taller', 'Artículo', 'Descripción', 'Observaciones', 'Cliente', 'Fecha entrega', 'Unidades', 'Tela', 'Cant. tela']
   const headerRowIdx = rows.length
   rows.push(header)
   const dataStart = rows.length
@@ -664,6 +664,7 @@ function armarHojaCortes(filas, ordenTalleres, tituloHoja) {
         idx === 0 ? t : '',
         f.codigo || '',
         f.descripcion || '',
+        f.observaciones || '',
         f.cliente || '',
         f.fecha_entrega || '',
         u,
@@ -673,7 +674,7 @@ function armarHojaCortes(filas, ordenTalleres, tituloHoja) {
     })
 
     filasSubtotal.push(rows.length)
-    rows.push(['', '', '', '', 'TOTAL ' + t, subtotal, '', ''])
+    rows.push(['', '', '', '', '', 'TOTAL ' + t, subtotal, '', ''])
     totalGeneral += subtotal
   })
 
@@ -682,7 +683,7 @@ function armarHojaCortes(filas, ordenTalleres, tituloHoja) {
   if (nombres.length > 1) {
     rows.push([])
     totalRowIdx = rows.length
-    rows.push(['TOTAL GENERAL', '', '', '', '', totalGeneral, '', ''])
+    rows.push(['TOTAL GENERAL', '', '', '', '', '', totalGeneral, '', ''])
   } else {
     totalRowIdx = filasSubtotal.length ? filasSubtotal[filasSubtotal.length - 1] : rows.length - 1
   }
@@ -690,12 +691,12 @@ function armarHojaCortes(filas, ordenTalleres, tituloHoja) {
   // Totales por tipo de tela, al final de todo
   rows.push([])
   const telaTituloIdx = rows.length
-  rows.push(['TOTALES POR TELA', '', '', '', '', '', '', ''])
+  rows.push(['TOTALES POR TELA', '', '', '', '', '', '', '', ''])
   const telaStart = rows.length
   const listaTelas = Object.keys(totalesTela).map(function(k) { return totalesTela[k] })
     .sort(function(a, b) { return String(a.tela).localeCompare(String(b.tela), 'es') })
   listaTelas.forEach(function(x) {
-    rows.push([x.tela, fmtCantTela(x.total, x.unidad), '', '', '', '', '', ''])
+    rows.push([x.tela, fmtCantTela(x.total, x.unidad), '', '', '', '', '', '', ''])
   })
   const telaFin = rows.length
 
