@@ -6,6 +6,24 @@ import { exportarCortesSheets } from '../lib/exportarSheets'
 
 const TALLERES = ['Eva', 'Juan', 'Justino', 'Jony', 'Farías', 'Lezcano', 'Walter', 'Milton', 'Arturo', 'Ramos']
 
+// Los códigos con letra vienen a veces con la L adelante y a veces atrás
+// ("L775" / "775L"): son el MISMO artículo. Se normalizan a NÚMERO+LETRA.
+function normCod(c) {
+  const s = String(c || '').toUpperCase().replace(/\s+/g, '')
+  const m = s.match(/^([A-Z]{1,2})(\d{1,4})$/)
+  if (m) return m[2] + m[1]
+  return s
+}
+
+// Variantes posibles de un código, para buscarlo en Costos escrito de cualquier forma
+function variantesCod(c) {
+  const n = normCod(c)
+  const m = n.match(/^(\d{1,4})([A-Z]{1,2})$/)
+  const out = [String(c), n]
+  if (m) out.push(m[2] + m[1])          // 775L → L775
+  return out.filter((v, i, a) => v && a.indexOf(v) === i)
+}
+
 export default function DistribucionCortes({ session, onVolver }) {
   const [pedidos, setPedidos] = useState([])
   const [historial, setHistorial] = useState({})
@@ -102,7 +120,7 @@ export default function DistribucionCortes({ session, onVolver }) {
       const resArt = await supabaseCostos
         .from('articulos')
         .select('id, codigo, descripcion, confeccion, categoria, notas_taller, temporada_id, created_at')
-        .in('codigo', codigos)
+        .in('codigo', codigos.reduce((acc, c) => acc.concat(variantesCod(c)), []))
       if (resArt.error) throw resArt.error
       const arts = resArt.data || []
       if (!arts.length) { setCostosPorCodigo({}); return }
@@ -145,7 +163,7 @@ export default function DistribucionCortes({ session, onVolver }) {
       // y, entre esos, el más reciente
       const elegido = {}
       arts.forEach(a => {
-        const c = String(a.codigo)
+        const c = normCod(a.codigo)
         const tiene = (porArtId[a.id] || []).length > 0
         const act = elegido[c]
         if (!act) { elegido[c] = { art: a, tiene: tiene }; return }
@@ -406,7 +424,7 @@ export default function DistribucionCortes({ session, onVolver }) {
 
   // Tela de cada artículo: consumo por prenda × unidades del pedido
   function telasDeItem(it) {
-    const c = costosPorCodigo[String(it.codigo)]
+    const c = costosPorCodigo[normCod(it.codigo)]
     if (c && c.telas.length) {
       return c.telas.map(t => ({
         tela: t.tela,
@@ -438,7 +456,7 @@ export default function DistribucionCortes({ session, onVolver }) {
   }
 
   function nombreTemporada(it) {
-    const c = costosPorCodigo[String(it.codigo)]
+    const c = costosPorCodigo[normCod(it.codigo)]
     if (!c || !c.temporada_id) return ''
     const t = temporadasCostos.find(x => x.id === c.temporada_id)
     return t ? t.nombre : ''
