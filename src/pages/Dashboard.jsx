@@ -3,17 +3,6 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { alertaFecha, formatFecha, pct } from '../lib/utils'
 
-// Un pedido está DISTRIBUIDO cuando todos sus artículos ya tienen taller asignado.
-// Si solo algunos lo tienen, está a medias.
-function estadoDistribucion(pedido) {
-  const arts = pedido.pedido_articulos || []
-  if (!arts.length) return 'sin'
-  const conTaller = arts.filter(a => a.taller && String(a.taller).trim() !== '').length
-  if (conTaller === 0) return 'sin'
-  if (conTaller === arts.length) return 'completa'
-  return 'parcial'
-}
-
 export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [pedidos, setPedidos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -186,7 +175,6 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
               const lista = grupos[nombre]
               const abierto = hayBusqueda || clienteAbierto === nombre
               const unidades = lista.reduce((s, p) => s + (p.pedido_articulos || []).reduce((x, a) => x + (Number(a.total_unidades) || 0), 0), 0)
-              const distribuidos = lista.filter(p => estadoDistribucion(p) === 'completa').length
 
               return (
                 <div key={nombre} style={{ background: '#1a1d27', border: '1px solid #2a2d3e', borderRadius: '1rem', overflow: 'hidden' }}>
@@ -202,20 +190,13 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
                     <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
                       {unidades.toLocaleString('es-AR')} u
                     </span>
-                    {distribuidos > 0 && (
-                      <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}
-                        title="Pedidos ya distribuidos en cortes">
-                        ✓ {distribuidos} distribuido{distribuidos === 1 ? '' : 's'}
-                      </span>
-                    )}
                   </div>
 
                   {abierto && (
                     <div style={{ padding: '0 0.75rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                       {lista.map(p => (
                         <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower}
-                          onEliminar={() => setConfirmarEliminar(p)} puedeEliminar={esGerencia}
-                          distribucion={estadoDistribucion(p)} />
+                          onEliminar={() => setConfirmarEliminar(p)} puedeEliminar={esGerencia} />
                       ))}
                     </div>
                   )}
@@ -250,7 +231,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   )
 }
 
-function TarjetaPedido({ pedido, onClick, busqueda, onEliminar, puedeEliminar, distribucion }) {
+function TarjetaPedido({ pedido, onClick, busqueda, onEliminar, puedeEliminar }) {
   const articulos = pedido.pedido_articulos || []
   const total = articulos.length
   const finalizados = articulos.filter(a => a.estado === 'finalizado').length
@@ -274,18 +255,6 @@ function TarjetaPedido({ pedido, onClick, busqueda, onEliminar, puedeEliminar, d
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: '1.125rem' }}>{pedido.clientes?.nombre}</span>
             {pedido.numero_pedido && <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>#{pedido.numero_pedido}</span>}
-            {distribucion === 'completa' && (
-              <span title="Ya distribuido en cortes" style={{
-                fontSize: '0.75rem', padding: '0.125rem 0.5rem', borderRadius: '9999px', fontWeight: 700,
-                background: '#052e16', color: '#4ade80', border: '1px solid #15803d'
-              }}>✓ Distribuido</span>
-            )}
-            {distribucion === 'parcial' && (
-              <span title="Algunos artículos todavía no tienen taller" style={{
-                fontSize: '0.75rem', padding: '0.125rem 0.5rem', borderRadius: '9999px', fontWeight: 700,
-                background: '#2a1f0f', color: '#fbbf24', border: '1px solid #a16207'
-              }}>◐ A medias</span>
-            )}
             <span style={{
               fontSize: '0.75rem', padding: '0.125rem 0.5rem', borderRadius: '9999px', fontWeight: 600,
               background: pedido.estado === 'finalizado' ? '#052e16' : '#1e3a5f',
