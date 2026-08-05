@@ -15,6 +15,13 @@ function normCod(c) {
   return s
 }
 
+// Un pedido está DISTRIBUIDO cuando TODOS sus artículos ya tienen taller asignado
+function yaDistribuido(pedido) {
+  const arts = pedido.pedido_articulos || []
+  if (!arts.length) return false
+  return arts.every(a => a.taller && String(a.taller).trim() !== '')
+}
+
 // Variantes posibles de un código, para buscarlo en Costos escrito de cualquier forma
 function variantesCod(c) {
   const n = normCod(c)
@@ -33,6 +40,7 @@ export default function DistribucionCortes({ session, onVolver }) {
   const [agruparRepetidos, setAgruparRepetidos] = useState(true)
   const [soloPendientes, setSoloPendientes] = useState(false)
   const [panelPedidos, setPanelPedidos] = useState(true)
+  const [panelHechos, setPanelHechos] = useState(false)
   const [guardando, setGuardando] = useState(null)
   const [autoasignando, setAutoasignando] = useState(false)
   const [exportando, setExportando] = useState(false)
@@ -565,33 +573,67 @@ export default function DistribucionCortes({ session, onVolver }) {
           ) : pedidos.length === 0 ? (
             <p style={{ color: '#8b9dc3', fontSize: '0.82rem', marginTop: '0.5rem' }}>No hay pedidos.</p>
           ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.55rem' }}>
-              {pedidos.map(p => {
-                const activo = seleccionados.includes(p.id)
+            <div>
+              {(() => {
+                const chip = (p, hecho) => {
+                  const activo = seleccionados.includes(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => togglePedido(p.id)}
+                      style={{
+                        backgroundColor: activo ? '#1e3a8a' : (hecho ? '#12251a' : '#1a1f35'),
+                        border: '1px solid ' + (activo ? '#3b5bdb' : (hecho ? '#15803d' : '#2a3150')),
+                        borderRadius: '0.45rem',
+                        padding: '0.35rem 0.6rem',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        color: '#fff',
+                        fontSize: '0.78rem'
+                      }}
+                    >
+                      {hecho && <span style={{ color: '#4ade80', marginRight: '0.25rem' }}>✓</span>}
+                      <strong>{p.clientes?.nombre || 'Sin cliente'}</strong>
+                      {p.numero_pedido ? ' · ' + p.numero_pedido : ''}
+                      <span style={{ color: '#8b9dc3' }}>
+                        {' · '}{(p.pedido_articulos || []).length} art.
+                        {p.fecha_entrega ? ' · ' + formatFecha(p.fecha_entrega) : ''}
+                      </span>
+                    </button>
+                  )
+                }
+                const hechos = pedidos.filter(yaDistribuido)
+                const pendientes = pedidos.filter(p => !yaDistribuido(p))
+
                 return (
-                  <button
-                    key={p.id}
-                    onClick={() => togglePedido(p.id)}
-                    style={{
-                      backgroundColor: activo ? '#1e3a8a' : '#1a1f35',
-                      border: '1px solid ' + (activo ? '#3b5bdb' : '#2a3150'),
-                      borderRadius: '0.45rem',
-                      padding: '0.35rem 0.6rem',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      color: '#fff',
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    <strong>{p.clientes?.nombre || 'Sin cliente'}</strong>
-                    {p.numero_pedido ? ' · ' + p.numero_pedido : ''}
-                    <span style={{ color: '#8b9dc3' }}>
-                      {' · '}{(p.pedido_articulos || []).length} art.
-                      {p.fecha_entrega ? ' · ' + formatFecha(p.fecha_entrega) : ''}
-                    </span>
-                  </button>
+                  <>
+                    {pendientes.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.55rem' }}>
+                        {pendientes.map(p => chip(p, false))}
+                      </div>
+                    )}
+                    {pendientes.length === 0 && (
+                      <p style={{ color: '#4ade80', fontSize: '0.82rem', marginTop: '0.55rem' }}>
+                        ✓ No queda ningún pedido sin distribuir.
+                      </p>
+                    )}
+
+                    {hechos.length > 0 && (
+                      <div style={{ marginTop: '0.6rem', borderTop: '1px solid #2a3150', paddingTop: '0.5rem' }}>
+                        <button onClick={() => setPanelHechos(v => !v)} style={estiloBotonPlano}>
+                          {panelHechos ? '▾' : '▸'} YA DISTRIBUIDOS
+                          <span style={{ color: '#4ade80', marginLeft: '0.4rem' }}>({hechos.length})</span>
+                        </button>
+                        {panelHechos && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }}>
+                            {hechos.map(p => chip(p, true))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )
-              })}
+              })()}
             </div>
           )
         )}
