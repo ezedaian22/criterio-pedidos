@@ -1203,6 +1203,37 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                       }
                     } catch (eB) { console.error('Error subiendo estampa blusas:', eB) }
                   }
+
+                  // ── ALTERNATIVAS: las imágenes de la hoja que NO tienen etiqueta.
+                  // Son estampas de reemplazo por si no se consigue alguna de las principales.
+                  // Se agregan como variantes con cantidad 0 y nombre "ALTERNATIVA n".
+                  for (var altI = 0; altI < mapB.alternativas.length; altI++) {
+                    var nomAlt = mapB.alternativas[altI]
+                    var mfAlt = null
+                    Object.keys(mediaFromZip).forEach(function(k) {
+                      if (mediaFromZip[k].path && mediaFromZip[k].path.split('/').pop() === nomAlt) mfAlt = mediaFromZip[k]
+                    })
+                    if (!mfAlt) continue
+                    try {
+                      var fnAlt = 'sucati/estampa_alt_' + codB + '_' + altI + '_' + Date.now() + '.' + mfAlt.ext
+                      var blobAlt = new Blob([mfAlt.buffer], { type: 'image/' + mfAlt.ext })
+                      var upAlt = await supabaseClient.storage.from('pedidos-variantes')
+                        .upload(fnAlt, blobAlt, { contentType: 'image/' + mfAlt.ext, upsert: true })
+                      if (!upAlt.error) {
+                        var urlAlt = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fnAlt)
+                        if (urlAlt.data) {
+                          artB.variantes.push({
+                            nombre: 'ALTERNATIVA ' + (altI + 1),
+                            cantidad: 0,
+                            curva_talles: null,
+                            es_estampa: true,
+                            es_alternativa: true,
+                            imagen_url: urlAlt.data.publicUrl
+                          })
+                        }
+                      }
+                    } catch (eAlt) { console.error('Error subiendo alternativa:', eAlt) }
+                  }
                 }
               } catch (errB) { console.error('Estampas por hoja:', errB) }
             }
