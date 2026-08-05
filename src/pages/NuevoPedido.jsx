@@ -215,6 +215,7 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
         codigo_cliente: art.codigo_cliente,
         descripcion_cliente: art.descripcion_cliente,
         descripcion_correcta: art.descripcion_correcta,
+        observaciones: art.observaciones || null,
         foto_url: art.foto_url || art.imagen_url || null,
         precio_unitario: art.precio_unitario,
         total_unidades: art.total_unidades,
