@@ -3,6 +3,24 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase, supabaseCostos } from '../lib/supabase'
 import { parsearArchivoPedido } from '../lib/parsearPedido'
 
+// Los códigos con letra vienen a veces con la L adelante y a veces atrás
+// ("L718" / "718L"): son el MISMO artículo. Se normalizan a NÚMERO+LETRA.
+function normCod(c) {
+  var s = String(c || '').toUpperCase().replace(/\s+/g, '')
+  var m = s.match(/^([A-Z]{1,2})(\d{1,4})$/)
+  if (m) return m[2] + m[1]
+  return s
+}
+
+// Todas las formas en que puede estar escrito ese código en Costos
+function variantesCod(c) {
+  var n = normCod(c)
+  var m = n.match(/^(\d{1,4})([A-Z]{1,2})$/)
+  var out = [String(c), n]
+  if (m) out.push(m[2] + m[1])
+  return out.filter(function(v, i, a) { return v && a.indexOf(v) === i })
+}
+
 export default function NuevoPedido({ session, onVolver, onGuardado, archivoInicial }) {
   const [paso, setPaso] = useState('archivo')
   const [clientes, setClientes] = useState([])
@@ -148,16 +166,17 @@ export default function NuevoPedido({ session, onVolver, onGuardado, archivoInic
     console.log('CODIGOS A BUSCAR:', codigos)
     if (codigos.length === 0) return pedidoIA
     try {
-      var result = await supabaseCostos.from('articulos').select('codigo, descripcion, foto_url').in('codigo', codigos)
+      var codigosBusqueda = codigos.reduce(function(acc, c) { return acc.concat(variantesCod(c)) }, [])
+      var result = await supabaseCostos.from('articulos').select('codigo, descripcion, foto_url').in('codigo', codigosBusqueda)
       console.log('RESULTADO COSTOS:', result.data, 'ERROR:', result.error)
       var mapa = {}
       if (result.data) {
-        result.data.slice().reverse().forEach(function(a) { mapa[String(a.codigo)] = a })
+        result.data.slice().reverse().forEach(function(a) { mapa[normCod(a.codigo)] = a })
       }
       console.log('MAPA:', mapa)
       return Object.assign({}, pedidoIA, {
         articulos: pedidoIA.articulos.map(function(a) {
-          var key = String(a.codigo_nuestro)
+          var key = normCod(a.codigo_nuestro)
           return Object.assign({}, a, {
             descripcion_correcta: mapa[key] ? mapa[key].descripcion : null,
             foto_url: mapa[key] ? mapa[key].foto_url : null,
