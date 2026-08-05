@@ -1161,7 +1161,10 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                   var codB = articulosOrden[aiB]
                   var artB = articulos[codB]
                   var varsEstB = artB.variantes.filter(function(v) { return v.es_estampa })
-                  if (!varsEstB.length) continue
+                  // Los artículos SIN módulo van "todo parejo": reciben TODAS las estampas
+                  // de la hoja de su tela (regla del usuario: si Sucati no diferencia, va todo igual)
+                  var todoParejoB = artB.variantes.length === 0
+                  if (!varsEstB.length && !todoParejoB) continue
 
                   // Elegir la hoja de estampas por una palabra de la descripción del artículo
                   var descB = String(artB.descripcion_cliente || '').toLowerCase()
@@ -1202,6 +1205,40 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                         if (urlB.data) vB.imagen_url = urlB.data.publicUrl
                       }
                     } catch (eB) { console.error('Error subiendo estampa blusas:', eB) }
+                  }
+
+                  // ── TODO PAREJO: el artículo no tiene módulo → le van TODAS las estampas
+                  // de su hoja, sin cantidad asignada.
+                  if (todoParejoB) {
+                    var todasImgs = Object.keys(mapB.mapa).map(function(k) { return { et: k, img: mapB.mapa[k] } })
+                    mapB.alternativas.forEach(function(nm, ix) { todasImgs.push({ et: 'ESTAMPA ' + (ix + 1), img: nm }) })
+                    for (var tpI = 0; tpI < todasImgs.length; tpI++) {
+                      var nomTP = todasImgs[tpI].img
+                      var mfTP = null
+                      Object.keys(mediaFromZip).forEach(function(k) {
+                        if (mediaFromZip[k].path && mediaFromZip[k].path.split('/').pop() === nomTP) mfTP = mediaFromZip[k]
+                      })
+                      if (!mfTP) continue
+                      try {
+                        var fnTP = 'sucati/estampa_par_' + codB + '_' + tpI + '_' + Date.now() + '.' + mfTP.ext
+                        var blobTP = new Blob([mfTP.buffer], { type: 'image/' + mfTP.ext })
+                        var upTP = await supabaseClient.storage.from('pedidos-variantes')
+                          .upload(fnTP, blobTP, { contentType: 'image/' + mfTP.ext, upsert: true })
+                        if (!upTP.error) {
+                          var urlTP = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fnTP)
+                          if (urlTP.data) {
+                            artB.variantes.push({
+                              nombre: todasImgs[tpI].et,
+                              cantidad: 0,
+                              curva_talles: null,
+                              es_estampa: true,
+                              imagen_url: urlTP.data.publicUrl
+                            })
+                          }
+                        }
+                      } catch (eTP) { console.error('Error subiendo estampa parejo:', eTP) }
+                    }
+                    continue   // no corresponden alternativas: ya van todas
                   }
 
                   // ── ALTERNATIVAS: las imágenes de la hoja que NO tienen etiqueta.
