@@ -889,7 +889,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
 
         // Encontrar fila encabezado
         var headerRowIdx = -1
-        var colCodProv = -1, colDesc = -1, colTalle = -1, colPrecio = -1
+        var colCodProv = -1, colDesc = -1, colTalle = -1, colPrecio = -1, colObs = -1
         var colSucs = {}
 
         for (var i = 0; i < rows.length; i++) {
@@ -903,6 +903,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             if (vs.toLowerCase() === 'descripcion') colDesc = j
             if (vs.toLowerCase() === 'talle') colTalle = j
             if (vs.toLowerCase().includes('costo f')) colPrecio = j
+            if (vs.toLowerCase().includes('observ')) colObs = j
             // Detectar columnas de sucursales: 0, 01, 02, ... y las que traiga el archivo.
             // Sucati manda pedidos con distinta cantidad de sucursales (23, 25...), así que
             // NO se usa un tope fijo: se acepta cualquier encabezado que sea SOLO dígitos.
@@ -1004,6 +1005,8 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               codigo_nuestro: codigo,
               codigo_cliente: codigo,
               descripcion_cliente: descripcion,
+              observaciones: (colObs >= 0 && row[colObs] !== null && row[colObs] !== undefined && String(row[colObs]).trim() !== '')
+                ? String(row[colObs]).trim() : null,
               precio_unitario: precio,
               talles_articulo: tallesLavalle,
               sucursales: sucursalesArt,
