@@ -860,10 +860,20 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             if (!articulos[cod]) return
             var m = modsAparte[cod]
             articulos[cod].variantes = m.variantes
+            // La curva del módulo es la SUMA de las curvas de todas sus variantes,
+            // así se ve cuántas prendas de cada talle entran en el módulo.
+            var curvaMod = {}
+            m.talles.forEach(function(t) { curvaMod[t] = 0 })
+            m.variantes.forEach(function(v) {
+              Object.keys(v.curva_talles || {}).forEach(function(t) {
+                curvaMod[t] = (curvaMod[t] || 0) + v.curva_talles[t]
+              })
+            })
+            Object.keys(curvaMod).forEach(function(t) { if (!curvaMod[t]) delete curvaMod[t] })
             articulos[cod].modulos = [{
               descripcion: 'Módulo x' + m.modulo + ' unidades',
               unidades_por_caja: m.modulo,
-              curva_talles: m.variantes.length === 1 ? m.variantes[0].curva_talles : null
+              curva_talles: Object.keys(curvaMod).length ? curvaMod : null
             }]
           })
           // Los artículos del pedido SIN módulo van "todo parejo"
