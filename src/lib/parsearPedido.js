@@ -629,10 +629,13 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             if (vs.toLowerCase() === 'descripcion') colDesc = j
             if (vs.toLowerCase() === 'talle') colTalle = j
             if (vs.toLowerCase().includes('costo f')) colPrecio = j
-            // Detectar columnas de sucursales: 0, 01, 02, ... 23
+            // Detectar columnas de sucursales: 0, 01, 02, ... y las que traiga el archivo.
+            // Sucati manda pedidos con distinta cantidad de sucursales (23, 25...), así que
+            // NO se usa un tope fijo: se acepta cualquier encabezado que sea SOLO dígitos.
             // Con raw:true, el 0 viene como integer, el resto puede ser string '01','02' o int
+            var esNumPuro = (typeof v === 'number') ? (v === Math.floor(v)) : /^\d{1,3}$/.test(vs)
             var numSuc = (typeof v === 'number') ? v : parseInt(vs)
-            if (!isNaN(numSuc) && numSuc >= 0 && numSuc <= 23) {
+            if (esNumPuro && !isNaN(numSuc) && numSuc >= 0 && numSuc <= 99) {
               colSucs[String(numSuc)] = j
             }
           })
