@@ -553,6 +553,22 @@ async function imagenesDeHojaRect(zip, wsPath) {
   var base = wsPath.split('/').pop()
   var wsRels = await zipText(zip, 'xl/worksheets/_rels/' + base + '.rels')
   if (!wsRels) return []
+
+  // Medidas reales de la hoja, para poder calcular el rectángulo cuando el anclaje
+  // es oneCellAnchor (trae el TAMAÑO en EMU en vez de la esquina final).
+  var wsXml = await zipText(zip, wsPath) || ''
+  var defW = 8.43, defH = 15
+  var mW = /defaultColWidth="([\d.]+)"/.exec(wsXml); if (mW) defW = parseFloat(mW[1])
+  var mH = /defaultRowHeight="([\d.]+)"/.exec(wsXml); if (mH) defH = parseFloat(mH[1])
+  var anchos = {}, mc, reC = /<col min="(\d+)" max="(\d+)" width="([\d.]+)"/g
+  while ((mc = reC.exec(wsXml))) {
+    for (var cc = parseInt(mc[1]); cc <= parseInt(mc[2]) && cc < 500; cc++) anchos[cc - 1] = parseFloat(mc[3])
+  }
+  var altos = {}, mr, reR = /<row r="(\d+)"[^>]*?ht="([\d.]+)"/g
+  while ((mr = reR.exec(wsXml))) altos[parseInt(mr[1]) - 1] = parseFloat(mr[2])
+  function anchoEMU(c) { var w = anchos[c] !== undefined ? anchos[c] : defW; return Math.round(w * 7 + 5) * 9525 }
+  function altoEMU(r) { var h = altos[r] !== undefined ? altos[r] : defH; return h * 12700 }
+
   var out = [], m
   var draws = [], dr = /Target="([^"]*drawing\d+\.xml)"/g
   while ((m = dr.exec(wsRels))) draws.push(m[1].split('/').pop())
@@ -566,16 +582,27 @@ async function imagenesDeHojaRect(zip, wsPath) {
     var anchors = dxml.split(/<xdr:(?:oneCellAnchor|twoCellAnchor)/).slice(1)
     anchors.forEach(function(a) {
       var fr = /<xdr:from>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(a)
-      var to = /<xdr:to>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(a)
       var eb = /r:embed="(rId\d+)"/.exec(a)
-      if (fr && eb && e2m[eb[1]]) {
-        out.push({
-          name: e2m[eb[1]],
-          row: parseInt(fr[2]), col: parseInt(fr[1]),
-          row2: to ? parseInt(to[2]) : parseInt(fr[2]),
-          col2: to ? parseInt(to[1]) : parseInt(fr[1])
-        })
+      if (!fr || !eb || !e2m[eb[1]]) return
+      var c0 = parseInt(fr[1]), r0 = parseInt(fr[2])
+      var c1 = c0, r1 = r0
+      var to = /<xdr:to>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(a)
+      if (to) {
+        c1 = parseInt(to[1]); r1 = parseInt(to[2])
+      } else {
+        // oneCellAnchor: avanzar celdas hasta cubrir el tamaño
+        var ex = /<xdr:ext[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(a)
+        if (ex) {
+          var cx = parseInt(ex[1]), cy = parseInt(ex[2])
+          var acum = 0; c1 = c0
+          while (acum < cx && c1 < c0 + 200) { acum += anchoEMU(c1); c1++ }
+          c1 = Math.max(c0, c1 - 1)
+          acum = 0; r1 = r0
+          while (acum < cy && r1 < r0 + 2000) { acum += altoEMU(r1); r1++ }
+          r1 = Math.max(r0, r1 - 1)
+        }
       }
+      out.push({ name: e2m[eb[1]], row: r0, col: c0, row2: r1, col2: c1 })
     })
   }
   out.sort(function(x, y) { return x.row - y.row || x.col - y.col })
@@ -594,6 +621,57 @@ async function hojasOcultasZip(zip) {
     if (nm) out.push(nm[1])
   }
   return out
+}
+
+// Lee con IA la etiqueta que viene IMPRESA en la foto de la muestra de tela.
+// Sucati a veces no pone los nombres (CW1, CW3...) en celdas de la hoja, pero sí
+// en una etiqueta pegada sobre la tela y fotografiada. Devuelve p.ej. "CW1" o null.
+async function leerEtiquetaEstampaIA(apiKey, base64, ext) {
+  var mime = ext === 'png' ? 'image/png' : 'image/jpeg'
+  var prompt = [
+    'Esta es la foto de una muestra de tela. Suele tener pegada una etiqueta blanca',
+    'con un código de artículo y un código de colorway del tipo CW1, CW2, CW3, CW7, CW10',
+    '(a veces EST1, DNS1 o VTE1).',
+    'Devolvé SOLO ese código de colorway, en mayúsculas y sin espacios (ej: CW10).',
+    'Si no ves ninguna etiqueta con ese código, devolvé exactamente: NINGUNO'
+  ].join(' ')
+  try {
+    var response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 20,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mime, data: base64 } },
+          { type: 'text', text: prompt }
+        ]}]
+      })
+    })
+    if (!response.ok) return null
+    var data = await response.json()
+    var txt = ''
+    ;(data.content || []).forEach(function(b) { if (b.type === 'text') txt += b.text })
+    txt = String(txt).trim().toUpperCase().replace(/\s+/g, '')
+    if (!txt || txt.indexOf('NINGUNO') !== -1) return null
+    var m = txt.match(/(CW|EST|DNS|VTE)\s*\d{1,2}/)
+    return m ? m[0].replace(/\s+/g, '') : null
+  } catch (e) {
+    console.error('IA etiqueta estampa:', e)
+    return null
+  }
+}
+
+// Convierte un ArrayBuffer a base64 (para mandar la imagen a la IA)
+function bufferABase64(buf) {
+  var bytes = new Uint8Array(buf), bin = ''
+  for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+  return btoa(bin)
 }
 
 // La hoja de estampas a veces trae arriba la FOTO DE LA ETIQUETA DE LA TELA
@@ -627,8 +705,11 @@ function mapearEstampasDeHoja(rowsHoja, imgs) {
   }
   var mapa = {}, usadas = {}
   etiquetas.forEach(function(et) {
+    // Tolerancia de 1 celda: cuando el anclaje es oneCellAnchor el rectángulo se
+    // calcula por tamaño y puede quedar corrido una celda.
     var cand = imgs.filter(function(im) {
-      return et.row >= im.row && et.row <= im.row2 && et.col > im.col2 && et.col <= im.col2 + 3
+      return et.row >= im.row - 1 && et.row <= im.row2 + 1 &&
+             et.col >= im.col2 - 1 && et.col <= im.col2 + 3
     })
     if (!cand.length) return
     // la más cercana horizontalmente
@@ -1195,7 +1276,32 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                   if (!cacheHoja[hojaB]) {
                     var rowsEstB = XLSX.utils.sheet_to_json(wb.Sheets[hojaB], { header: 1, defval: null, raw: true })
                     var imgsB = await imagenesDeHojaRect(zip, mapaHojasB[hojaB])
-                    cacheHoja[hojaB] = mapearEstampasDeHoja(rowsEstB, imgsB)
+                    var mapeoB = mapearEstampasDeHoja(rowsEstB, imgsB)
+
+                    // Si la hoja NO trae los nombres en celdas, Sucati los pone en una
+                    // etiqueta pegada sobre la tela: se la leemos con IA a cada foto.
+                    if (!mapeoB.hayEtiquetas) {
+                      var apiKeyIA = null
+                      try { apiKeyIA = localStorage.getItem('criterio_anthropic_key') } catch (e) {}
+                      if (apiKeyIA) {
+                        for (var li = 0; li < imgsB.length; li++) {
+                          var imL = imgsB[li]
+                          if (esFichaDeTela(imL, imgsB)) continue   // la ficha del proveedor no es estampa
+                          var mfL = null
+                          Object.keys(mediaFromZip).forEach(function(k) {
+                            if (mediaFromZip[k].path && mediaFromZip[k].path.split('/').pop() === imL.name) mfL = mediaFromZip[k]
+                          })
+                          if (!mfL) continue
+                          var etiq = await leerEtiquetaEstampaIA(apiKeyIA, bufferABase64(mfL.buffer), mfL.ext)
+                          if (etiq && !mapeoB.mapa[etiq]) {
+                            mapeoB.mapa[etiq] = imL.name
+                            mapeoB.alternativas = mapeoB.alternativas.filter(function(n) { return n !== imL.name })
+                          }
+                        }
+                        if (Object.keys(mapeoB.mapa).length > 0) mapeoB.hayEtiquetas = true
+                      }
+                    }
+                    cacheHoja[hojaB] = mapeoB
                   }
                   var mapB = cacheHoja[hojaB]
 
