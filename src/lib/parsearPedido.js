@@ -546,6 +546,86 @@ async function imagenesDeHoja(zip, wsPath) {
   return out
 }
 
+// Igual que imagenesDeHoja pero devuelve el RECTÁNGULO completo (from + to).
+// Se usa para emparejar las etiquetas de estampa (EST1, EST2...) con su imagen,
+// que en la hoja están escritas AL LADO del cuadro, no encima.
+async function imagenesDeHojaRect(zip, wsPath) {
+  var base = wsPath.split('/').pop()
+  var wsRels = await zipText(zip, 'xl/worksheets/_rels/' + base + '.rels')
+  if (!wsRels) return []
+  var out = [], m
+  var draws = [], dr = /Target="([^"]*drawing\d+\.xml)"/g
+  while ((m = dr.exec(wsRels))) draws.push(m[1].split('/').pop())
+  for (var di = 0; di < draws.length; di++) {
+    var dfile = draws[di]
+    var dxml = await zipText(zip, 'xl/drawings/' + dfile)
+    var drels = await zipText(zip, 'xl/drawings/_rels/' + dfile + '.rels')
+    if (!dxml || !drels) continue
+    var e2m = {}, em, er = /Id="(rId\d+)"[^>]*?Target="([^"]*media\/[^"]+)"/g
+    while ((em = er.exec(drels))) e2m[em[1]] = em[2].split('/').pop()
+    var anchors = dxml.split(/<xdr:(?:oneCellAnchor|twoCellAnchor)/).slice(1)
+    anchors.forEach(function(a) {
+      var fr = /<xdr:from>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(a)
+      var to = /<xdr:to>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(a)
+      var eb = /r:embed="(rId\d+)"/.exec(a)
+      if (fr && eb && e2m[eb[1]]) {
+        out.push({
+          name: e2m[eb[1]],
+          row: parseInt(fr[2]), col: parseInt(fr[1]),
+          row2: to ? parseInt(to[2]) : parseInt(fr[2]),
+          col2: to ? parseInt(to[1]) : parseInt(fr[1])
+        })
+      }
+    })
+  }
+  out.sort(function(x, y) { return x.row - y.row || x.col - y.col })
+  return out
+}
+
+// Hojas ocultas del workbook (ej. 'brapatex'): sus imágenes NO deben usarse.
+async function hojasOcultasZip(zip) {
+  var wbxml = await zipText(zip, 'xl/workbook.xml')
+  if (!wbxml) return []
+  var out = [], m, re = /<sheet ([^>]+)\/>/g
+  while ((m = re.exec(wbxml))) {
+    var attrs = m[1]
+    if (!/state="(hidden|veryHidden)"/i.test(attrs)) continue
+    var nm = /name="([^"]+)"/.exec(attrs)
+    if (nm) out.push(nm[1])
+  }
+  return out
+}
+
+// Empareja cada etiqueta de estampa con la imagen que tiene a su IZQUIERDA.
+// Devuelve { 'EST1': 'image12.png', ... } y la lista de imágenes sin etiqueta (alternativas).
+function mapearEstampasDeHoja(rowsHoja, imgs) {
+  var etiquetas = []
+  for (var r = 0; r < rowsHoja.length; r++) {
+    var fila = rowsHoja[r] || []
+    for (var c = 0; c < fila.length; c++) {
+      var v = fila[c]
+      if (v === null || v === undefined) continue
+      var t = String(v).trim()
+      if (/^(est|cw|dns|vte)\s*\d{1,2}$/i.test(t)) {
+        etiquetas.push({ texto: t.replace(/\s+/g, '').toUpperCase(), row: r, col: c })
+      }
+    }
+  }
+  var mapa = {}, usadas = {}
+  etiquetas.forEach(function(et) {
+    var cand = imgs.filter(function(im) {
+      return et.row >= im.row && et.row <= im.row2 && et.col > im.col2 && et.col <= im.col2 + 3
+    })
+    if (!cand.length) return
+    // la más cercana horizontalmente
+    cand.sort(function(a, b) { return (et.col - a.col2) - (et.col - b.col2) })
+    mapa[et.texto] = cand[0].name
+    usadas[cand[0].name] = true
+  })
+  var alternativas = imgs.filter(function(im) { return !usadas[im.name] }).map(function(im) { return im.name })
+  return { mapa: mapa, alternativas: alternativas, hayEtiquetas: etiquetas.length > 0 }
+}
+
 // ─── Módulos de Sucati en HOJA APARTE (ej. hoja "MODULOS" del pedido de blusas) ───
 // La hoja trae los bloques en grilla: varios módulos por fila, en distintas columnas.
 //   fila r    → título "MÓDULO ART <cod> X <n> UNIDADES"  (puede ser "704L/718L")
@@ -1068,6 +1148,65 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
             // 1. Si hay hoja de estampas (Modal Est): subir UNA imagen por variante en orden
             // 2. Si no: subir la imagen más representativa por artículo (muestrario de colores)
 
+            // ── BLUSAS: estampas por HOJA + ETIQUETA (EST1, EST2…) ──
+            // Cada estampa se toma de la hoja de estampas que corresponde a la tela del
+            // artículo, emparejando la etiqueta con la imagen que tiene al lado.
+            // Se ignoran las hojas OCULTAS (ej. "brapatex").
+            if (modsAparte && zip) {
+              try {
+                var ocultasB = await hojasOcultasZip(zip)
+                var mapaHojasB = await mapaHojasZip(zip)
+                var cacheHoja = {}
+                for (var aiB = 0; aiB < articulosOrden.length; aiB++) {
+                  var codB = articulosOrden[aiB]
+                  var artB = articulos[codB]
+                  var varsEstB = artB.variantes.filter(function(v) { return v.es_estampa })
+                  if (!varsEstB.length) continue
+
+                  // Elegir la hoja de estampas por una palabra de la descripción del artículo
+                  var descB = String(artB.descripcion_cliente || '').toLowerCase()
+                  var hojaB = null
+                  Object.keys(mapaHojasB).forEach(function(nom) {
+                    if (ocultasB.indexOf(nom) !== -1) return
+                    if (!/estampa/i.test(nom)) return
+                    var pal = nom.toLowerCase().replace(/estampas?/g, ' ').split(/\s+/)
+                      .filter(function(w) { return w.length > 3 })
+                    if (pal.some(function(w) { return descB.indexOf(w) !== -1 })) hojaB = nom
+                  })
+                  if (!hojaB) continue
+
+                  if (!cacheHoja[hojaB]) {
+                    var rowsEstB = XLSX.utils.sheet_to_json(wb.Sheets[hojaB], { header: 1, defval: null, raw: true })
+                    var imgsB = await imagenesDeHojaRect(zip, mapaHojasB[hojaB])
+                    cacheHoja[hojaB] = mapearEstampasDeHoja(rowsEstB, imgsB)
+                  }
+                  var mapB = cacheHoja[hojaB]
+
+                  for (var viB = 0; viB < varsEstB.length; viB++) {
+                    var vB = varsEstB[viB]
+                    var clave = String(vB.nombre || '').replace(/\s+/g, '').toUpperCase()
+                    var nombreImg = mapB.mapa[clave]
+                    if (!nombreImg) continue
+                    var mfB = null
+                    Object.keys(mediaFromZip).forEach(function(k) {
+                      if (mediaFromZip[k].path && mediaFromZip[k].path.split('/').pop() === nombreImg) mfB = mediaFromZip[k]
+                    })
+                    if (!mfB) continue
+                    try {
+                      var fnB = 'sucati/estampa_' + codB + '_' + clave + '_' + Date.now() + '.' + mfB.ext
+                      var blobB = new Blob([mfB.buffer], { type: 'image/' + mfB.ext })
+                      var upB = await supabaseClient.storage.from('pedidos-variantes')
+                        .upload(fnB, blobB, { contentType: 'image/' + mfB.ext, upsert: true })
+                      if (!upB.error) {
+                        var urlB = supabaseClient.storage.from('pedidos-variantes').getPublicUrl(fnB)
+                        if (urlB.data) vB.imagen_url = urlB.data.publicUrl
+                      }
+                    } catch (eB) { console.error('Error subiendo estampa blusas:', eB) }
+                  }
+                }
+              } catch (errB) { console.error('Estampas por hoja:', errB) }
+            }
+
             // Detectar si hay hoja de estampas
             var hojaEstampas = wb.SheetNames.find(function(s) {
               return s.toLowerCase().includes('modal est') || s.toLowerCase().includes('estampa')
@@ -1078,7 +1217,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
               return mediaFromZip[idx] && mediaFromZip[idx].buffer.byteLength >= 100000
             })
 
-            if (hojaEstampas && Object.keys(articulos).some(function(c) { return articulos[c].variantes.some(function(v){ return v.es_estampa }) })) {
+            if (!modsAparte && hojaEstampas && Object.keys(articulos).some(function(c) { return articulos[c].variantes.some(function(v){ return v.es_estampa }) })) {
               // Modo estampas: imágenes entre 100KB y 950KB son estampas
               // Imágenes >1MB son fotos del artículo terminado — no las queremos acá
               var imgsEstampas = mediaIdxs.filter(function(idx) {
