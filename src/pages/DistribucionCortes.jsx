@@ -17,6 +17,9 @@ function normCod(c) {
 
 // Un pedido está DISTRIBUIDO cuando TODOS sus artículos ya tienen taller asignado
 function yaDistribuido(pedido) {
+  // Marca manual (se pone por SQL). Manda sobre todo lo demás.
+  if (pedido.cortes_hechos === true) return true
+  // Si no está marcado, se considera hecho cuando TODOS los artículos tienen taller
   const arts = pedido.pedido_articulos || []
   if (!arts.length) return false
   return arts.every(a => a.taller && String(a.taller).trim() !== '')
@@ -77,7 +80,7 @@ export default function DistribucionCortes({ session, onVolver }) {
     try {
       let q = supabase
         .from('pedidos')
-        .select('id, numero_pedido, fecha_entrega, estado, clientes(nombre), pedido_articulos(id, codigo_nuestro, codigo_cliente, descripcion_cliente, descripcion_correcta, total_unidades, taller, observaciones)')
+        .select('id, numero_pedido, fecha_entrega, estado, cortes_hechos, clientes(nombre), pedido_articulos(id, codigo_nuestro, codigo_cliente, descripcion_cliente, descripcion_correcta, total_unidades, taller, observaciones)')
         .order('fecha_entrega', { ascending: true })
       if (soloActivos) q = q.eq('estado', 'activo')
       const { data, error } = await q
