@@ -596,6 +596,20 @@ async function hojasOcultasZip(zip) {
   return out
 }
 
+// La hoja de estampas a veces trae arriba la FOTO DE LA ETIQUETA DE LA TELA
+// (cartel del proveedor + composición). No es una estampa: se identifica porque
+// es APAISADA (mucho más ancha que alta, al revés que las estampas) y está SOLA
+// arriba de todo, sin ninguna otra imagen a su altura.
+function esFichaDeTela(img, todas) {
+  var alto = (img.row2 - img.row) || 1
+  var ancho = (img.col2 - img.col) || 1
+  if (ancho / alto < 0.6) return false          // las estampas son altas y angostas
+  var otras = todas.filter(function(o) { return o !== img })
+  if (!otras.length) return false
+  var sola = otras.every(function(o) { return o.row > img.row2 - 2 })
+  return sola
+}
+
 // Empareja cada etiqueta de estampa con la imagen que tiene a su IZQUIERDA.
 // Devuelve { 'EST1': 'image12.png', ... } y la lista de imágenes sin etiqueta (alternativas).
 function mapearEstampasDeHoja(rowsHoja, imgs) {
@@ -623,7 +637,7 @@ function mapearEstampasDeHoja(rowsHoja, imgs) {
     usadas[cand[0].name] = true
   })
   var alternativas = imgs.filter(function(im) { return !usadas[im.name] }).map(function(im) { return im.name })
-  return { mapa: mapa, alternativas: alternativas, hayEtiquetas: etiquetas.length > 0 }
+  return { mapa: mapa, alternativas: alternativas, hayEtiquetas: etiquetas.length > 0, imgs: imgs }
 }
 
 // ─── Módulos de Sucati en HOJA APARTE (ej. hoja "MODULOS" del pedido de blusas) ───
@@ -1211,7 +1225,19 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                   // de su hoja, sin cantidad asignada.
                   if (todoParejoB) {
                     var todasImgs = Object.keys(mapB.mapa).map(function(k) { return { et: k, img: mapB.mapa[k] } })
-                    mapB.alternativas.forEach(function(nm, ix) { todasImgs.push({ et: 'ESTAMPA ' + (ix + 1), img: nm }) })
+                    // Separar la ficha de tela (no es estampa) y numerar solo las estampas
+                    var imgsHoja = mapB.imgs || []
+                    var nombresFicha = imgsHoja.filter(function(im) { return esFichaDeTela(im, imgsHoja) })
+                      .map(function(im) { return im.name })
+                    var nEst = 0
+                    mapB.alternativas.forEach(function(nm) {
+                      if (nombresFicha.indexOf(nm) !== -1) {
+                        todasImgs.push({ et: 'FICHA DE TELA', img: nm, ficha: true })
+                      } else {
+                        nEst++
+                        todasImgs.push({ et: 'ESTAMPA ' + nEst, img: nm })
+                      }
+                    })
                     for (var tpI = 0; tpI < todasImgs.length; tpI++) {
                       var nomTP = todasImgs[tpI].img
                       var mfTP = null
@@ -1232,6 +1258,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                               cantidad: 0,
                               curva_talles: null,
                               es_estampa: true,
+                              es_ficha: !!todasImgs[tpI].ficha,
                               imagen_url: urlTP.data.publicUrl
                             })
                           }
