@@ -51,7 +51,7 @@ export default function DistribucionCortes({ session, onVolver }) {
     try {
       let q = supabase
         .from('pedidos')
-        .select('id, numero_pedido, fecha_entrega, estado, clientes(nombre), pedido_articulos(id, codigo_nuestro, codigo_cliente, descripcion_cliente, descripcion_correcta, total_unidades, taller)')
+        .select('id, numero_pedido, fecha_entrega, estado, clientes(nombre), pedido_articulos(id, codigo_nuestro, codigo_cliente, descripcion_cliente, descripcion_correcta, total_unidades, taller, observaciones)')
         .order('fecha_entrega', { ascending: true })
       if (soloActivos) q = q.eq('estado', 'activo')
       const { data, error } = await q
@@ -341,6 +341,7 @@ export default function DistribucionCortes({ session, onVolver }) {
         taller: a.taller || '',
         codigo: a.codigo_nuestro || '',
         descripcion: a.descripcion_correcta || a.descripcion_cliente || '',
+        observaciones: a.observaciones || '',
         cliente: p.clientes?.nombre || '',
         numero_pedido: p.numero_pedido || '',
         fecha_entrega: p.fecha_entrega ? formatFecha(p.fecha_entrega) : '',
