@@ -246,6 +246,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
   const [exportArtError, setExportArtError] = useState(null)
   const variantes = articulo.pedido_articulo_variantes || []
   const modulos = articulo.pedido_modulos || []
+  const esSucati = /sucati|chandal/i.test(pedido?.clientes?.nombre || pedido?.razon_social || '')
 
   const sucsNormales = sucursales.filter(s => !s.es_entrega_final).sort((a, b) => {
     const na = Number(String(a.nro_sucursal).replace('T', ''))
@@ -430,15 +431,30 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           </div>
         )}
 
+        {/* Artículo de Sucati sin módulo: va todo parejo */}
+        {esSucati && modulos.length === 0 && variantes.length === 0 && (
+          <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
+            <div style={{ background: '#2a1f0f', border: '2px solid #a16207', borderRadius: '0.75rem', padding: '0.625rem 0.875rem', textAlign: 'center' }}>
+              <span style={{ color: '#fbbf24', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '0.9rem', letterSpacing: '0.03em' }}>
+                ⚖️ ESTE ARTÍCULO VA TODO PAREJO
+              </span>
+              <p style={{ color: '#d6b877', fontSize: '0.7rem', marginTop: '0.25rem' }}>
+                En estampas y colores — el pedido no trae módulo para este artículo
+              </p>
+            </div>
+          </div>
+        )}
+
         {variantes.length > 0 && (
           <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
             <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Colores / Variantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               {variantes.map(v => {
                 const esEstampa = v.es_estampa || /dns|vte|estampa/i.test(v.nombre || '')
+                const esAlternativa = /^alternativa/i.test(v.nombre || '')
                 const color = esEstampa ? null : colorDeNombre(v.nombre)
                 return (
-                  <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', minWidth: '5rem', maxWidth: '7rem' }}>
+                  <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: esAlternativa ? '1px dashed #a16207' : '1px solid rgba(255,255,255,0.1)', minWidth: '5rem', maxWidth: '7rem' }}>
                     {/* Imagen de estampa o círculo de color */}
                     <div style={{ height: '4rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: esEstampa ? '#111' : color, overflow: 'hidden', cursor: v.imagen_url ? 'zoom-in' : 'default' }}
                       onClick={() => v.imagen_url && onExpandirFoto(v.imagen_url)}>
@@ -450,9 +466,12 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                       }
                     </div>
                     {/* Nombre y cantidad */}
-                    <div style={{ background: '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
+                    <div style={{ background: esAlternativa ? '#2a1f0f' : '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
                       <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'white', lineHeight: 1.2 }}>{v.nombre}</div>
-                      <div style={{ fontSize: '0.65rem', color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</div>
+                      {esAlternativa
+                        ? <div style={{ fontSize: '0.6rem', color: '#fbbf24', fontWeight: 700 }}>de reemplazo</div>
+                        : <div style={{ fontSize: '0.65rem', color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</div>
+                      }
                     </div>
                   </div>
                 )
