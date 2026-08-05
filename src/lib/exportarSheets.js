@@ -796,7 +796,28 @@ function formatosHojaCortes(sheetId, a) {
       fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
     }},
 
-    { autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: nCols } }}
+    { autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: nCols } }},
+
+    // El autoajuste agranda de más la col A (por el título y "TOTALES POR TELA").
+    // Le fijamos un ancho corto y le damos aire a Descripción y Observaciones.
+    { updateDimensionProperties: {
+      range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 },
+      properties: { pixelSize: 95 }, fields: 'pixelSize'
+    }},
+    { updateDimensionProperties: {
+      range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 },
+      properties: { pixelSize: 260 }, fields: 'pixelSize'
+    }},
+    { updateDimensionProperties: {
+      range: { sheetId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 },
+      properties: { pixelSize: 300 }, fields: 'pixelSize'
+    }},
+    // Que el texto largo de Descripción y Observaciones se corte en varias líneas
+    { repeatCell: {
+      range: { sheetId, startRowIndex: a.dataStart, endRowIndex: a.totalRowIdx + 1, startColumnIndex: 2, endColumnIndex: 4 },
+      cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } },
+      fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)'
+    }}
   )
 
   // Bloque de totales por tela (si hay telas cargadas)
