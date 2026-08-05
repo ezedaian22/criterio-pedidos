@@ -242,8 +242,26 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
     finally { setGuardando(null) }
   }
 
+  // Cambiar qué foto le corresponde a una variante (por si la IA leyó mal la etiqueta).
+  // Intercambia las imágenes entre las dos variantes para no perder ninguna.
+  async function reasignarImagen(varianteId, nuevaUrl) {
+    const origen = variantes.find(v => v.imagen_url === nuevaUrl)
+    const destino = variantes.find(v => v.id === varianteId)
+    if (!destino) return
+    try {
+      const cambios = [{ id: destino.id, imagen_url: nuevaUrl }]
+      if (origen && origen.id !== destino.id) cambios.push({ id: origen.id, imagen_url: destino.imagen_url })
+      for (const c of cambios) {
+        await supabase.from('pedido_articulo_variantes').update({ imagen_url: c.imagen_url }).eq('id', c.id)
+      }
+      setCambiandoImg(null)
+      if (onActualizar) onActualizar()
+    } catch (err) { console.error('Reasignar imagen:', err) }
+  }
+
   const [exportandoArt, setExportandoArt] = useState(false)
   const [exportArtError, setExportArtError] = useState(null)
+  const [cambiandoImg, setCambiandoImg] = useState(null)
   const variantes = articulo.pedido_articulo_variantes || []
   const modulos = articulo.pedido_modulos || []
   const esSucati = /sucati|chandal/i.test(pedido?.clientes?.nombre || pedido?.razon_social || '')
@@ -469,6 +487,12 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                     {/* Nombre y cantidad */}
                     <div style={{ background: esFicha ? '#0d2b28' : esAlternativa ? '#2a1f0f' : '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
                       <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'white', lineHeight: 1.2 }}>{v.nombre}</div>
+                      {!esFicha && v.imagen_url && (
+                        <button onClick={() => setCambiandoImg(cambiandoImg === v.id ? null : v.id)}
+                          style={{ background: 'none', border: 'none', color: '#8b9dc3', fontSize: '0.55rem', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>
+                          cambiar foto
+                        </button>
+                      )}
                       {esFicha
                         ? <div style={{ fontSize: '0.6rem', color: '#5eead4', fontWeight: 700 }}>proveedor</div>
                         : esAlternativa
@@ -476,6 +500,16 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                           : <div style={{ fontSize: '0.65rem', color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</div>
                       }
                     </div>
+                    {cambiandoImg === v.id && (
+                      <div style={{ background: '#0b0e1a', padding: '0.3rem', display: 'flex', flexWrap: 'wrap', gap: '0.2rem', borderTop: '1px solid #2a2d3e' }}>
+                        {variantes.filter(o => o.imagen_url).map(o => (
+                          <img key={o.id} src={o.imagen_url} alt={o.nombre}
+                            title={'Usar la foto de ' + o.nombre}
+                            onClick={() => reasignarImagen(v.id, o.imagen_url)}
+                            style={{ width: '1.6rem', height: '1.6rem', objectFit: 'cover', borderRadius: '0.2rem', cursor: 'pointer', border: o.imagen_url === v.imagen_url ? '2px solid #4ade80' : '1px solid #2a2d3e' }} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}
