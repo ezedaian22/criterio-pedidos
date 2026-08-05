@@ -452,9 +452,10 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
               {variantes.map(v => {
                 const esEstampa = v.es_estampa || /dns|vte|estampa/i.test(v.nombre || '')
                 const esAlternativa = /^alternativa/i.test(v.nombre || '')
+                const esFicha = v.es_ficha || /^ficha de tela/i.test(v.nombre || '')
                 const color = esEstampa ? null : colorDeNombre(v.nombre)
                 return (
-                  <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: esAlternativa ? '1px dashed #a16207' : '1px solid rgba(255,255,255,0.1)', minWidth: '5rem', maxWidth: '7rem' }}>
+                  <div key={v.id} style={{ borderRadius: '0.625rem', overflow: 'hidden', border: esFicha ? '1px solid #14746b' : esAlternativa ? '1px dashed #a16207' : '1px solid rgba(255,255,255,0.1)', minWidth: '5rem', maxWidth: '7rem' }}>
                     {/* Imagen de estampa o círculo de color */}
                     <div style={{ height: '4rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: esEstampa ? '#111' : color, overflow: 'hidden', cursor: v.imagen_url ? 'zoom-in' : 'default' }}
                       onClick={() => v.imagen_url && onExpandirFoto(v.imagen_url)}>
@@ -466,11 +467,13 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
                       }
                     </div>
                     {/* Nombre y cantidad */}
-                    <div style={{ background: esAlternativa ? '#2a1f0f' : '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
+                    <div style={{ background: esFicha ? '#0d2b28' : esAlternativa ? '#2a1f0f' : '#0f1117', padding: '0.25rem 0.375rem', textAlign: 'center' }}>
                       <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'white', lineHeight: 1.2 }}>{v.nombre}</div>
-                      {esAlternativa
-                        ? <div style={{ fontSize: '0.6rem', color: '#fbbf24', fontWeight: 700 }}>de reemplazo</div>
-                        : <div style={{ fontSize: '0.65rem', color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</div>
+                      {esFicha
+                        ? <div style={{ fontSize: '0.6rem', color: '#5eead4', fontWeight: 700 }}>proveedor</div>
+                        : esAlternativa
+                          ? <div style={{ fontSize: '0.6rem', color: '#fbbf24', fontWeight: 700 }}>de reemplazo</div>
+                          : <div style={{ fontSize: '0.65rem', color: '#93c5fd', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{v.cantidad}u</div>
                       }
                     </div>
                   </div>
