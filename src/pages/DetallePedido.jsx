@@ -432,7 +432,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
         )}
 
         {/* Artículo de Sucati sin módulo: va todo parejo */}
-        {esSucati && modulos.length === 0 && variantes.length === 0 && (
+        {esSucati && modulos.length === 0 && (
           <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2d3e' }}>
             <div style={{ background: '#2a1f0f', border: '2px solid #a16207', borderRadius: '0.75rem', padding: '0.625rem 0.875rem', textAlign: 'center' }}>
               <span style={{ color: '#fbbf24', fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '0.9rem', letterSpacing: '0.03em' }}>
