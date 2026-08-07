@@ -6,21 +6,21 @@ import { parsearArchivoPedido } from '../lib/parsearPedido'
 // ─── Fórmulas de venta neta por cliente (las mismas de la solapa Ganancia) ───
 // GR:     precio × unidades                      (sin IVA ni descuento)
 // Balbi:  precio × (1,21 − 0,25 − 0,05) = ×0,91  (IVA, desc 25% y contado 5%, por separado)
-// Sucati: precio ÷ 1,21                          (el precio ya viene con IVA)
+// Sucati: precio × unidades                      (el precio de venta ya es el neto)
 const IVA = 0.21
 const CLIENTES = ['García Reguera', 'Balbi', 'Sucati']
 
 function factorVenta(cliente) {
   const c = String(cliente || '').toLowerCase()
   if (c.indexOf('balbi') !== -1) return (1 + IVA) - 0.25 - 0.05
-  if (c.indexOf('sucati') !== -1 || c.indexOf('chandal') !== -1) return 1 / (1 + IVA)
+  if (c.indexOf('sucati') !== -1 || c.indexOf('chandal') !== -1) return 1
   return 1
 }
 
 function explicacionFormula(cliente) {
   const c = String(cliente || '').toLowerCase()
   if (c.indexOf('balbi') !== -1) return 'precio × 0,91 (IVA 21% − desc 25% − contado 5%)'
-  if (c.indexOf('sucati') !== -1 || c.indexOf('chandal') !== -1) return 'precio ÷ 1,21 (el precio ya trae IVA)'
+  if (c.indexOf('sucati') !== -1 || c.indexOf('chandal') !== -1) return 'precio tal cual (el precio de venta ya es el neto)'
   return 'precio tal cual (sin IVA ni descuento)'
 }
 
