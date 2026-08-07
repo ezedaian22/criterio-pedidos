@@ -9,6 +9,7 @@ import Ajustes from './pages/Ajustes'
 import DistribucionCortes from './pages/DistribucionCortes'
 import HistorialClientes from './pages/HistorialClientes'
 import Ganancia from './pages/Ganancia'
+import Simulacion from './pages/Simulacion'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -33,7 +34,7 @@ export default function App() {
   }
 
   function irA(pag, data = null) {
-    if ((pag === 'ajustes' || pag === 'cortes' || pag === 'historial' || pag === 'ganancia') && !esGerencia) return
+    if ((pag === 'ajustes' || pag === 'cortes' || pag === 'historial' || pag === 'ganancia' || pag === 'simulacion') && !esGerencia) return
     setPagina(pag)
     if (data) setPedidoSeleccionado(data)
   }
@@ -133,6 +134,22 @@ export default function App() {
             >
               GANANCIA
             </button>
+            <button
+              onClick={() => irA('simulacion')}
+              style={{
+                backgroundColor: pagina === 'simulacion' ? '#1e3a8a' : 'transparent',
+                color: pagina === 'simulacion' ? '#ffffff' : '#7b9fff',
+                border: '1px solid #3b5bdb',
+                borderRadius: '0.5rem',
+                padding: '0.3rem 0.7rem',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.03em'
+              }}
+            >
+              SIMULACIÓN
+            </button>
           </nav>
         )}
 
@@ -226,6 +243,12 @@ export default function App() {
         )}
         {pagina === 'ganancia' && esGerencia && (
           <Ganancia
+            session={session}
+            onVolver={() => irA('dashboard')}
+          />
+        )}
+        {pagina === 'simulacion' && esGerencia && (
+          <Simulacion
             session={session}
             onVolver={() => irA('dashboard')}
           />
