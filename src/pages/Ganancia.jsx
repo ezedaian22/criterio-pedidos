@@ -29,7 +29,7 @@ function nombreCliente(p) {
 function factorVenta(cliente) {
   const c = String(cliente || '').toLowerCase()
   if (c.indexOf('balbi') !== -1) return { tipo: 'balbi', factor: (1 + IVA) - BALBI_DESC - BALBI_CONTADO }
-  if (c.indexOf('sucati') !== -1) return { tipo: 'sucati', factor: 1 / (1 + IVA) }
+  if (c.indexOf('sucati') !== -1) return { tipo: 'sucati', factor: 1 }
   return { tipo: 'gr', factor: 1 } // García Reguera y cualquier otro
 }
 
@@ -197,7 +197,7 @@ export default function Ganancia({ session, onVolver }) {
 
       <div style={{ ...estiloPanel, fontSize: '0.76rem', color: '#8b9dc3' }}>
         <strong style={{ color: '#c8d8ff' }}>Cómo se calcula la venta neta:</strong>{' '}
-        García Reguera = precio · Balbi = precio × 0,91 (IVA 21% − desc 25% − contado 5%) · Sucati = precio ÷ 1,21.
+        García Reguera = precio · Balbi = precio × 0,91 (IVA 21% − desc 25% − contado 5%) · Sucati = precio.
         La ganancia es venta neta − costo (tela + avíos + perchas + confección + corte, de la app de Costos).
       </div>
 
