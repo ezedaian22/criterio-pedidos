@@ -1698,7 +1698,8 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
           if (todasSucs.indexOf(n) === -1) todasSucs.push(n)
         })
       })
-      var tieneRetail = todasSucs.some(function(n) { return n >= 18 && n <= 23 })
+      // Retail es de la 18 en adelante (antes cortaba en 23 y Balbi sumó sucursales)
+      var tieneRetail = todasSucs.some(function(n) { return n >= 18 })
       var tieneHijos  = todasSucs.some(function(n) { return n >= 1  && n <= 17 })
       var razonSocial = tieneHijos && tieneRetail
         ? 'E.A. Balbi e Hijos S.A. + Balbi Retail S.A.'
