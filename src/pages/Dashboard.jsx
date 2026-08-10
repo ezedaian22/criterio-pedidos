@@ -3,6 +3,23 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { alertaFecha, formatFecha, pct } from '../lib/utils'
 
+// Los pedidos de Balbi se separan por razón social: las sucursales 18 en adelante
+// son Balbi Retail S.A. Si el pedido mezcla las dos, queda bajo Balbi con una marca.
+function nombreGrupo(p) {
+  const cliente = (p.clientes && p.clientes.nombre) ? p.clientes.nombre : 'Sin cliente'
+  if (!/balbi/i.test(cliente)) return cliente
+  const rs = String(p.razon_social || '')
+  const hayRetail = /retail/i.test(rs)
+  const hayHijos = /hijos/i.test(rs)
+  if (hayRetail && !hayHijos) return 'Balbi Retail'
+  return 'Balbi'
+}
+
+function esMixto(p) {
+  const rs = String(p.razon_social || '')
+  return /retail/i.test(rs) && /hijos/i.test(rs)
+}
+
 export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [pedidos, setPedidos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -22,7 +39,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
     try {
       const { data, error } = await supabase
         .from('pedidos')
-        .select('*, clientes(nombre), pedido_articulos(id, estado, total_unidades, codigo_nuestro, descripcion_cliente, descripcion_correcta, taller), descuento, razon_social')
+        .select('*, razon_social, clientes(nombre), pedido_articulos(id, estado, total_unidades, codigo_nuestro, descripcion_cliente, descripcion_correcta, taller), descuento, razon_social')
         .order('fecha_entrega', { ascending: true })
       if (error) throw error
       setPedidos(data || [])
@@ -163,7 +180,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
             // Agrupar por cliente para no tener que scrollear toda la lista
             const grupos = {}
             pedidosFiltrados.forEach(p => {
-              const n = (p.clientes && p.clientes.nombre) ? p.clientes.nombre : 'Sin cliente'
+              const n = nombreGrupo(p)
               if (!grupos[n]) grupos[n] = []
               grupos[n].push(p)
             })
@@ -255,6 +272,12 @@ function TarjetaPedido({ pedido, onClick, busqueda, onEliminar, puedeEliminar })
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: '1.125rem' }}>{pedido.clientes?.nombre}</span>
             {pedido.numero_pedido && <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>#{pedido.numero_pedido}</span>}
+            {esMixto(pedido) && (
+              <span title="Tiene sucursales de las dos razones sociales" style={{
+                fontSize: '0.7rem', padding: '0.1rem 0.45rem', borderRadius: '9999px', fontWeight: 700,
+                background: '#1e293b', color: '#93c5fd', border: '1px solid #3b5bdb'
+              }}>+ Retail</span>
+            )}
             <span style={{
               fontSize: '0.75rem', padding: '0.125rem 0.5rem', borderRadius: '9999px', fontWeight: 600,
               background: pedido.estado === 'finalizado' ? '#052e16' : '#1e3a5f',
