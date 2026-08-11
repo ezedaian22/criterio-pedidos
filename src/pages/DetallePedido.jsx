@@ -289,6 +289,45 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
     finally { setGuardando(null) }
   }
 
+  // Volver un paso atrás: finalizado → guardado → separado → pendiente.
+  // Al salir de finalizado se borran las cajas y la fecha, y el artículo deja de estar cerrado.
+  async function retrocederEstado(suc) {
+    const anterior = { finalizado: 'guardado', guardado: 'separado', separado: 'pendiente' }[suc.estado]
+    if (!anterior) return
+    setGuardando(suc.id)
+    try {
+      const update = { estado: anterior }
+      if (suc.estado === 'finalizado') { update.nro_cajas = null; update.fecha_finalizacion = null }
+      await supabase.from('pedido_sucursales').update(update).eq('id', suc.id)
+      const nuevas = sucursales.map(s => s.id === suc.id ? { ...s, ...update } : s)
+      setSucursales(nuevas)
+
+      // Si el artículo estaba finalizado y ahora hay una sucursal sin terminar, se reabre
+      const todasListas = nuevas.filter(s => !s.es_entrega_final).every(s => s.estado === 'finalizado')
+      const algunaEmpezada = nuevas.some(s => s.estado !== 'pendiente')
+      if (!todasListas && articulo.estado === 'finalizado') {
+        await supabase.from('pedido_articulos').update({ estado: 'en_proceso', fecha_finalizacion: null }).eq('id', articulo.id)
+        onActualizar()
+      } else if (!algunaEmpezada && articulo.estado !== 'pendiente') {
+        await supabase.from('pedido_articulos').update({ estado: 'pendiente', fecha_finalizacion: null }).eq('id', articulo.id)
+        onActualizar()
+      }
+    } catch (err) { console.error(err) }
+    finally { setGuardando(null) }
+  }
+
+  // Corregir la cantidad de cajas sin tener que deshacer el finalizado
+  async function corregirCajas(suc, nroCajas) {
+    const n = parseInt(nroCajas)
+    if (isNaN(n)) return
+    setGuardando(suc.id)
+    try {
+      await supabase.from('pedido_sucursales').update({ nro_cajas: n }).eq('id', suc.id)
+      setSucursales(prev => prev.map(s => s.id === suc.id ? { ...s, nro_cajas: n } : s))
+    } catch (err) { console.error(err) }
+    finally { setGuardando(null) }
+  }
+
   async function guardarCajas(suc, nroCajas) {
     if (!nroCajas || isNaN(nroCajas)) return
     setGuardando(suc.id)
@@ -524,14 +563,14 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
         <div>
           <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Distribución por talle</h2>
           <SucursalesGrid sucs={sucsNormales.filter(s => s.cantidad > 0)}
-            onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas}
+            onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas} onRetroceder={retrocederEstado} onCorregirCajas={corregirCajas}
             onEditarCantidad={editarCantidad} guardando={guardando} esTalle />
         </div>
       ) : (
         <div>
           <h2 style={{ fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Sucursales</h2>
           <SucursalesGrid sucs={sucsNormales.filter(s => s.cantidad > 0)}
-            onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas}
+            onAvanzar={avanzarEstado} onGuardarCajas={guardarCajas} onRetroceder={retrocederEstado} onCorregirCajas={corregirCajas}
             onEditarCantidad={editarCantidad} guardando={guardando} />
         </div>
       )}
@@ -541,7 +580,7 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
           <h2 style={{ fontSize: '0.75rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Suc. 0 — Entrega final</h2>
           {!todasNormalesOk && <p style={{ fontSize: '0.7rem', color: '#c084fc', marginBottom: '0.375rem' }}>Se habilita cuando todas las sucursales estén listas.</p>}
           <SucursalesGrid sucs={[suc0]} especial bloqueada={!todasNormalesOk}
-            onAvanzar={avanzarEstado} onGuardarCajas={(suc, n) => finalizarSuc0(n)}
+            onAvanzar={avanzarEstado} onGuardarCajas={(suc, n) => finalizarSuc0(n)} onRetroceder={retrocederEstado} onCorregirCajas={corregirCajas}
             onEditarCantidad={editarCantidad} guardando={guardando} />
         </div>
       )}
@@ -582,7 +621,7 @@ const ESTADOS_LEYENDA = [
   { estado: 'finalizado', color: '#22c55e', label: 'Finalizado' },
 ]
 
-function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, guardando, especial, bloqueada, esTalle }) {
+function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, onRetroceder, onCorregirCajas, guardando, especial, bloqueada, esTalle }) {
   const [seleccionada, setSeleccionada] = useState(null)
   const sucPanel = seleccionada ? sucs.find(s => s.id === seleccionada) : null
 
@@ -650,6 +689,8 @@ function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, gua
           onAvanzar={() => onAvanzar(sucPanel)}
           onGuardarCajas={n => { onGuardarCajas(sucPanel, n); setSeleccionada(null) }}
           onEditarCantidad={n => onEditarCantidad(sucPanel, n)}
+          onRetroceder={() => onRetroceder(sucPanel)}
+          onCorregirCajas={n => onCorregirCajas(sucPanel, n)}
           cargando={guardando === sucPanel.id}
           onCerrar={() => setSeleccionada(null)} />
       )}
@@ -657,7 +698,9 @@ function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, gua
   )
 }
 
-function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargando, especial, bloqueada, onCerrar, esTalle }) {
+function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, onRetroceder, onCorregirCajas, cargando, especial, bloqueada, onCerrar, esTalle }) {
+  const [editandoCajas, setEditandoCajas] = useState(false)
+  const [cajasCorrec, setCajasCorrec] = useState('')
   const [cajasInput, setCajasInput] = useState(suc.nro_cajas ? String(suc.nro_cajas) : '')
   const [editandoCantidad, setEditandoCantidad] = useState(false)
   const [cantidadInput, setCantidadInput] = useState(String(suc.cantidad))
@@ -699,7 +742,20 @@ function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, carga
             </span>
           )}
         </div>
-        <button onClick={onCerrar} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          {suc.estado !== 'pendiente' && (
+            <button onClick={onRetroceder} disabled={cargando}
+              title="Volver al estado anterior (si lo marcaste por error)"
+              style={{
+                background: '#2a1f0f', border: '1px solid #a16207', color: '#fbbf24',
+                borderRadius: '0.4rem', padding: '0.15rem 0.5rem', fontSize: '0.72rem',
+                fontWeight: 700, cursor: cargando ? 'wait' : 'pointer', opacity: cargando ? 0.6 : 1
+              }}>
+              ↶ Deshacer
+            </button>
+          )}
+          <button onClick={onCerrar} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+        </div>
       </div>
 
       {/* Talles */}
@@ -716,9 +772,27 @@ function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, carga
 
       {/* Fecha y cajas si finalizado */}
       {suc.estado === 'finalizado' && (
-        <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.375rem' }}>
-          ✓ {formatFecha(suc.fecha_finalizacion)}{suc.nro_cajas ? ' · ' + suc.nro_cajas + ' caja' + (suc.nro_cajas > 1 ? 's' : '') : ''}
-        </p>
+        <div style={{ marginBottom: '0.375rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: 0 }}>
+            ✓ {formatFecha(suc.fecha_finalizacion)}{suc.nro_cajas ? ' · ' + suc.nro_cajas + ' caja' + (suc.nro_cajas > 1 ? 's' : '') : ''}
+          </p>
+          {editandoCajas ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <input type="number" min="0" value={cajasCorrec} autoFocus
+                onChange={e => setCajasCorrec(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { onCorregirCajas(cajasCorrec); setEditandoCajas(false) } if (e.key === 'Escape') setEditandoCajas(false) }}
+                style={{ width: '3.5rem', background: '#0f1117', border: '1px solid #b45309', borderRadius: '0.25rem', padding: '0.1rem 0.25rem', color: 'white', fontSize: '0.8rem', textAlign: 'center' }} />
+              <button onClick={() => { onCorregirCajas(cajasCorrec); setEditandoCajas(false) }}
+                style={{ background: '#b45309', color: 'white', border: 'none', borderRadius: '0.25rem', padding: '0.1rem 0.45rem', cursor: 'pointer', fontWeight: 700, fontSize: '0.75rem' }}>✓</button>
+              <button onClick={() => setEditandoCajas(false)} style={{ background: 'none', color: '#6b7280', border: 'none', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
+            </span>
+          ) : (
+            <button onClick={() => { setCajasCorrec(suc.nro_cajas ? String(suc.nro_cajas) : ''); setEditandoCajas(true) }}
+              style={{ background: 'none', border: 'none', color: '#fcd34d', fontSize: '0.72rem', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>
+              corregir cajas
+            </button>
+          )}
+        </div>
       )}
 
       {/* Input cajas — aparece en estado guardado */}
