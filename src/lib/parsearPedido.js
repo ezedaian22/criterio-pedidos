@@ -1,3 +1,27 @@
+import { supabase } from './supabase'
+
+// API key de Anthropic: primero de la base (pedidos.config_app), después de localStorage.
+// Así queda cargada para siempre y no se pierde al limpiar el navegador.
+async function obtenerApiKey() {
+  var local = null
+  try { local = localStorage.getItem('criterio_anthropic_key') } catch (e) {}
+  try {
+    var resp = await supabase
+      .from('config_app')
+      .select('anthropic_key')
+      .eq('id', 1)
+      .maybeSingle()
+    if (!resp.error && resp.data && resp.data.anthropic_key) {
+      var k = String(resp.data.anthropic_key).trim()
+      if (k) {
+        try { localStorage.setItem('criterio_anthropic_key', k) } catch (e) {}
+        return k
+      }
+    }
+  } catch (e) { /* si falla la base, usamos el local */ }
+  return local
+}
+
 async function extraerItemsPDF(base64) {
   try {
     if (!window.pdfjsLib) {
@@ -1285,7 +1309,7 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
                     // etiqueta pegada sobre la tela: se la leemos con IA a cada foto.
                     if (!mapeoB.hayEtiquetas) {
                       var apiKeyIA = null
-                      try { apiKeyIA = localStorage.getItem('criterio_anthropic_key') } catch (e) {}
+                      try { apiKeyIA = await obtenerApiKey() } catch (e) {}
                       if (apiKeyIA) {
                         for (var li = 0; li < imgsB.length; li++) {
                           var imL = imgsB[li]
@@ -1598,7 +1622,7 @@ async function llamarIA(apiKey, base64, mimeType, textoPDF, soloMeta) {
 }
 
 export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClient) {
-  var apiKey = localStorage.getItem('criterio_anthropic_key')
+  var apiKey = await obtenerApiKey()
   if (!apiKey) throw new Error('Falta la API Key. Configurala en Ajustes.')
 
   // Para XLS/XLSX ir directo al parser de Sucati sin pasar por fileToBase64
