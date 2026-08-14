@@ -71,7 +71,8 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
 
   const pedidosFiltrados = pedidos.filter(p => {
     if (filtro === 'activo' && p.estado !== 'activo') return false
-    if (filtro === 'finalizado' && p.estado !== 'finalizado') return false
+    // En "Finalizados" se listan los ARTÍCULOS terminados, aunque el pedido siga abierto
+    if (filtro === 'finalizado' && !(p.pedido_articulos || []).some(a => a.estado === 'finalizado')) return false
     if (!busqueda) return true
     // Buscar por cliente, número de pedido, código o descripción de artículo
     if (p.clientes?.nombre?.toLowerCase().includes(busquedaLower)) return true
@@ -191,7 +192,22 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
             return nombres.map(nombre => {
               const lista = grupos[nombre]
               const abierto = hayBusqueda || clienteAbierto === nombre
-              const unidades = lista.reduce((s, p) => s + (p.pedido_articulos || []).reduce((x, a) => x + (Number(a.total_unidades) || 0), 0), 0)
+              const soloFin = filtro === 'finalizado'
+
+              // En "Finalizados" se cuentan y listan los ARTÍCULOS terminados
+              const artsFin = []
+              if (soloFin) {
+                lista.forEach(p => {
+                  (p.pedido_articulos || []).forEach(a => {
+                    if (a.estado === 'finalizado') artsFin.push({ art: a, pedido: p })
+                  })
+                })
+                artsFin.sort((x, y) => String(x.art.codigo_nuestro || '').localeCompare(String(y.art.codigo_nuestro || ''), 'es', { numeric: true }))
+              }
+
+              const unidades = soloFin
+                ? artsFin.reduce((s, x) => s + (Number(x.art.total_unidades) || 0), 0)
+                : lista.reduce((s, p) => s + (p.pedido_articulos || []).reduce((x, a) => x + (Number(a.total_unidades) || 0), 0), 0)
 
               return (
                 <div key={nombre} style={{ background: '#1a1d27', border: '1px solid #2a2d3e', borderRadius: '1rem', overflow: 'hidden' }}>
@@ -202,7 +218,9 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
                     <span style={{ color: '#6b7280', fontSize: '0.9rem' }}>{abierto ? '▾' : '▸'}</span>
                     <span style={{ fontWeight: 700, fontSize: '1.15rem', color: 'white', flex: 1, minWidth: '8rem' }}>{nombre}</span>
                     <span style={{ color: '#93c5fd', fontSize: '0.85rem' }}>
-                      {lista.length} pedido{lista.length === 1 ? '' : 's'}
+                      {soloFin
+                        ? artsFin.length + ' artículo' + (artsFin.length === 1 ? '' : 's')
+                        : lista.length + ' pedido' + (lista.length === 1 ? '' : 's')}
                     </span>
                     <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
                       {unidades.toLocaleString('es-AR')} u
@@ -210,11 +228,36 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
                   </div>
 
                   {abierto && (
-                    <div style={{ padding: '0 0.75rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {lista.map(p => (
-                        <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower}
-                          onEliminar={() => setConfirmarEliminar(p)} puedeEliminar={esGerencia} />
-                      ))}
+                    <div style={{ padding: '0 0.75rem 0.75rem', display: 'flex', flexDirection: 'column', gap: soloFin ? '0.4rem' : '0.75rem' }}>
+                      {soloFin
+                        ? artsFin.map(({ art, pedido }) => (
+                            <div key={art.id}
+                              onClick={() => onVerPedido(pedido)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap',
+                                background: '#0f1117', border: '1px solid #15803d', borderRadius: '0.6rem',
+                                padding: '0.55rem 0.7rem', cursor: 'pointer'
+                              }}>
+                              <span style={{ color: '#4ade80', fontSize: '0.85rem' }}>✓</span>
+                              <span style={{ color: '#7b9fff', fontWeight: 700, fontSize: '0.9rem', minWidth: '3.5rem' }}>
+                                {art.codigo_nuestro}
+                              </span>
+                              <span style={{ color: '#e5e7eb', fontSize: '0.85rem', flex: 1, minWidth: '9rem' }}>
+                                {art.descripcion_correcta || art.descripcion_cliente}
+                              </span>
+                              <span style={{ color: 'white', fontWeight: 700, fontSize: '0.85rem' }}>
+                                {(Number(art.total_unidades) || 0).toLocaleString('es-AR')} u
+                              </span>
+                              <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                                {pedido.numero_pedido ? '#' + pedido.numero_pedido : ''}
+                                {pedido.fecha_entrega ? ' · ' + formatFecha(pedido.fecha_entrega) : ''}
+                              </span>
+                            </div>
+                          ))
+                        : lista.map(p => (
+                            <TarjetaPedido key={p.id} pedido={p} onClick={() => onVerPedido(p)} busqueda={busquedaLower}
+                              onEliminar={() => setConfirmarEliminar(p)} puedeEliminar={esGerencia} />
+                          ))}
                     </div>
                   )}
                 </div>
