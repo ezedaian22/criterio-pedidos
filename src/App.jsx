@@ -15,6 +15,7 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [pagina, setPagina] = useState('dashboard')
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null)
+  const [articuloInicial, setArticuloInicial] = useState(null)
   const [archivoParaNuevo, setArchivoParaNuevo] = useState(null)
 
   useEffect(() => {
@@ -211,7 +212,7 @@ export default function App() {
               setArchivoParaNuevo(archivo || null)
               setPagina('nuevo')
             }}
-            onVerPedido={(p) => irA('detalle', p)}
+            onVerPedido={(p, artId) => { setArticuloInicial(artId || null); irA('detalle', p) }}
           />
         )}
         {pagina === 'nuevo' && (
@@ -226,7 +227,8 @@ export default function App() {
           <DetallePedido
             session={session}
             pedido={pedidoSeleccionado}
-            onVolver={() => irA('dashboard')}
+            articuloInicialId={articuloInicial}
+            onVolver={() => { setArticuloInicial(null); irA('dashboard') }}
           />
         )}
         {pagina === 'cortes' && esGerencia && (
