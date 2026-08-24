@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatFecha, alertaFecha, pct } from '../lib/utils'
 import { exportarArticuloSheets } from '../lib/exportarSheets'
 
-export default function DetallePedido({ session, pedido, onVolver }) {
+export default function DetallePedido({ session, pedido, onVolver, articuloInicialId }) {
   const [articulos, setArticulos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [artSeleccionado, setArtSeleccionado] = useState(null)
@@ -21,7 +21,13 @@ export default function DetallePedido({ session, pedido, onVolver }) {
         .eq('pedido_id', pedido.id)
         .order('id')
       if (error) throw error
-      setArticulos(data || [])
+      const lista = data || []
+      setArticulos(lista)
+      // Si se entró desde el buscador, abrir directamente ese artículo
+      if (articuloInicialId && !artSeleccionado) {
+        const inicial = lista.find(a => a.id === articuloInicialId)
+        if (inicial) setArtSeleccionado(inicial)
+      }
     } catch (err) { console.error(err) }
     finally { setCargando(false) }
   }
