@@ -178,6 +178,56 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
       ) : (
         <div className="space-y-3">
           {(() => {
+            // ── Con búsqueda: se listan los ARTÍCULOS que coinciden, y al tocar uno
+            //    se abre directamente la pantalla de ese artículo (no la del pedido).
+            if (busquedaLower) {
+              const encontrados = []
+              pedidosFiltrados.forEach(p => {
+                (p.pedido_articulos || []).forEach(a => {
+                  const coincide =
+                    a.codigo_nuestro?.toLowerCase().includes(busquedaLower) ||
+                    a.descripcion_cliente?.toLowerCase().includes(busquedaLower) ||
+                    a.descripcion_correcta?.toLowerCase().includes(busquedaLower)
+                  if (coincide) encontrados.push({ art: a, pedido: p })
+                })
+              })
+              if (encontrados.length > 0) {
+                encontrados.sort((x, y) =>
+                  String(x.art.codigo_nuestro || '').localeCompare(String(y.art.codigo_nuestro || ''), 'es', { numeric: true }))
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    <p style={{ color: '#6b7280', fontSize: '0.78rem', margin: 0 }}>
+                      {encontrados.length} artículo{encontrados.length === 1 ? '' : 's'} — tocá uno para abrirlo
+                    </p>
+                    {encontrados.map(({ art, pedido }) => (
+                      <div key={art.id}
+                        onClick={() => onVerPedido(pedido, art.id)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap',
+                          background: '#1a1d27', border: '1px solid #2a2d3e', borderRadius: '0.7rem',
+                          padding: '0.6rem 0.75rem', cursor: 'pointer'
+                        }}>
+                        <span style={{ color: '#7b9fff', fontWeight: 700, fontSize: '0.95rem', minWidth: '3.5rem' }}>
+                          {art.codigo_nuestro}
+                        </span>
+                        <span style={{ color: '#e5e7eb', fontSize: '0.88rem', flex: 1, minWidth: '9rem' }}>
+                          {art.descripcion_correcta || art.descripcion_cliente}
+                        </span>
+                        {art.estado === 'finalizado' && <span style={{ color: '#4ade80', fontSize: '0.8rem' }}>✓</span>}
+                        <span style={{ color: 'white', fontWeight: 700, fontSize: '0.85rem' }}>
+                          {(Number(art.total_unidades) || 0).toLocaleString('es-AR')} u
+                        </span>
+                        <span style={{ color: '#6b7280', fontSize: '0.76rem' }}>
+                          {nombreGrupo(pedido)}
+                          {pedido.numero_pedido ? ' · #' + pedido.numero_pedido : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+            }
+
             // Agrupar por cliente para no tener que scrollear toda la lista
             const grupos = {}
             pedidosFiltrados.forEach(p => {
