@@ -20,6 +20,54 @@ function esMixto(p) {
   return /retail/i.test(rs) && /hijos/i.test(rs)
 }
 
+// Balbi y Balbi Retail son la misma empresa: piden los mismos artículos en las dos,
+// con distintas cantidades y sucursales. Si uno se terminó en una y en la otra no,
+// hay que avisarlo para no despachar a medias.
+function desparejosBalbi(pedidos) {
+  const porCodigo = {}
+  pedidos.forEach(p => {
+    const grupo = nombreGrupo(p)
+    const esBalbi = grupo === 'Balbi' || grupo === 'Balbi Retail'
+    if (!esBalbi) return
+    ;(p.pedido_articulos || []).forEach(a => {
+      const cod = String(a.codigo_nuestro || '').trim()
+      if (!cod) return
+      if (!porCodigo[cod]) porCodigo[cod] = {}
+      // Si el mismo código aparece en varios pedidos de la misma razón social,
+      // se considera terminado solo cuando TODOS están terminados
+      const actual = porCodigo[cod][grupo]
+      const fin = a.estado === 'finalizado'
+      porCodigo[cod][grupo] = {
+        listo: actual ? (actual.listo && fin) : fin,
+        descripcion: a.descripcion_correcta || a.descripcion_cliente || (actual ? actual.descripcion : ''),
+        pedido: actual ? actual.pedido : p,
+        artId: actual ? actual.artId : a.id
+      }
+    })
+  })
+
+  const out = []
+  Object.keys(porCodigo).forEach(cod => {
+    const g = porCodigo[cod]
+    const b = g['Balbi'], r = g['Balbi Retail']
+    if (!b || !r) return                 // no está en las dos: no aplica
+    if (b.listo === r.listo) return      // las dos igual: nada que avisar
+    const hecho = b.listo ? 'Balbi' : 'Balbi Retail'
+    const falta = b.listo ? 'Balbi Retail' : 'Balbi'
+    const dest = b.listo ? r : b         // se abre el que FALTA
+    out.push({
+      codigo: cod,
+      descripcion: (b.descripcion || r.descripcion || ''),
+      hecho: hecho,
+      falta: falta,
+      pedido: dest.pedido,
+      artId: dest.artId
+    })
+  })
+  out.sort((x, y) => String(x.codigo).localeCompare(String(y.codigo), 'es', { numeric: true }))
+  return out
+}
+
 export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [pedidos, setPedidos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -66,6 +114,8 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
     } catch (err) { console.error(err) }
     finally { setEliminando(false) }
   }
+
+  const avisosBalbi = desparejosBalbi(pedidos)
 
   const busquedaLower = busqueda.toLowerCase()
 
@@ -125,7 +175,32 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
         <button className="btn-primary" style={{ fontSize: '0.875rem' }} onClick={() => onNuevoPedido()}>+ Nuevo pedido</button>
       </div>
 
-      {/* Instrucciones carga de pedidos */}
+      {/* Aviso: artículos terminados en una Balbi pero no en la otra */}
+      {avisosBalbi.length > 0 && (
+        <div style={{ background: '#2a1f0f', border: '2px solid #b45309', borderRadius: '0.75rem', padding: '0.75rem 0.875rem' }}>
+          <p style={{ color: '#fcd34d', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+            ⚠ {avisosBalbi.length} artículo{avisosBalbi.length === 1 ? '' : 's'} terminado{avisosBalbi.length === 1 ? '' : 's'} en una Balbi y pendiente{avisosBalbi.length === 1 ? '' : 's'} en la otra
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+            {avisosBalbi.map(av => (
+              <div key={av.codigo}
+                onClick={() => onVerPedido(av.pedido, av.artId)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+                  background: '#1a1400', borderRadius: '0.5rem', padding: '0.45rem 0.6rem', cursor: 'pointer'
+                }}>
+                <span style={{ color: '#fcd34d', fontWeight: 700, fontSize: '0.9rem', minWidth: '3.2rem' }}>{av.codigo}</span>
+                <span style={{ color: '#e5e7eb', fontSize: '0.85rem', flex: 1, minWidth: '8rem' }}>{av.descripcion}</span>
+                <span style={{ color: '#4ade80', fontSize: '0.78rem' }}>✓ {av.hecho}</span>
+                <span style={{ color: '#f87171', fontSize: '0.78rem', fontWeight: 700 }}>falta {av.falta}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Instrucciones carga de pedidos (no hacen falta en Finalizados) */}
+      {filtro !== 'finalizado' && (
       <div style={{ background: '#0f1117', border: '1px solid #2a2d3e', borderRadius: '0.75rem', padding: '0.75rem 0.875rem' }}>
         <p style={{ color: '#9ca3af', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.5rem' }}>Cómo cargar pedidos</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', marginBottom: '0.75rem' }}>
@@ -143,6 +218,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Buscador */}
       <input
