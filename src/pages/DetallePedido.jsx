@@ -657,14 +657,14 @@ function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, onR
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
         {ESTADOS_LEYENDA.map(e => (
           <div key={e.estado} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-            <div style={{ width: '0.7rem', height: '0.7rem', borderRadius: '50%', background: e.color, flexShrink: 0 }} />
-            <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>{e.label}</span>
+            <div style={{ width: '0.8rem', height: '0.8rem', borderRadius: '50%', background: e.color, flexShrink: 0 }} />
+            <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>{e.label}</span>
           </div>
         ))}
       </div>
 
       {/* Grilla */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(5.2rem, 1fr))', gap: '0.45rem', marginBottom: sucPanel ? '0.5rem' : 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(6rem, 1fr))', gap: '0.5rem', marginBottom: sucPanel ? '0.5rem' : 0 }}>
         {sucs.map(s => {
           const activa = seleccionada === s.id
           const est = s.estado || 'pendiente'
@@ -674,15 +674,15 @@ function SucursalesGrid({ sucs, onAvanzar, onGuardarCajas, onEditarCantidad, onR
               style={{
                 background: activa ? (border[est] + '33') : bgColor[est],
                 border: '2px solid ' + (activa ? border[est] : (especial ? '#7e22ce' : border[est])),
-                borderRadius: '0.55rem', padding: '0.45rem 0.3rem',
+                borderRadius: '0.6rem', padding: '0.55rem 0.35rem',
                 textAlign: 'center', cursor: bloqueada ? 'not-allowed' : 'pointer',
                 opacity: bloqueada ? 0.4 : 1, position: 'relative',
                 transition: 'all 0.15s'
               }}>
-              <div style={{ position: 'absolute', top: '0.25rem', right: '0.25rem', width: '0.52rem', height: '0.52rem', borderRadius: '50%', background: dotColor[est] }} />
-              <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.15rem', color: especial ? '#c084fc' : 'white' }}>{s.nro_sucursal}</div>
-              <div style={{ fontSize: '0.8rem', color: textColor[est], fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{s.cantidad}u</div>
-              {s.estado === 'finalizado' && s.nro_cajas && <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>{s.nro_cajas}cj</div>}
+              <div style={{ position: 'absolute', top: '0.25rem', right: '0.25rem', width: '0.6rem', height: '0.6rem', borderRadius: '50%', background: dotColor[est] }} />
+              <div style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.35rem', color: especial ? '#c084fc' : 'white' }}>{s.nro_sucursal}</div>
+              <div style={{ fontSize: '0.95rem', color: textColor[est], fontFamily: "'Archivo Black', sans-serif", fontWeight: 700 }}>{s.cantidad}u</div>
+              {s.estado === 'finalizado' && s.nro_cajas && <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{s.nro_cajas}cj</div>}
               {guardando === s.id && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', borderRadius: '0.4rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'white' }}>...</div>}
             </div>
           )
