@@ -731,7 +731,7 @@ function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, onRet
           <span style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '1.1rem', color: especial ? '#c084fc' : '#6b8fff' }}>{esTalle ? 'Talle ' + String(suc.nro_sucursal).replace('T','') : 'Suc. ' + suc.nro_sucursal}</span>
           <span style={{ fontSize: '0.8rem', color: labelColor[suc.estado], fontWeight: 600 }}>{labels[suc.estado]}</span>
           {/* Cantidad editable */}
-          {suc.estado !== 'finalizado' && editandoCantidad ? (
+          {editandoCantidad ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
               <input type="number" min="0" value={cantidadInput}
                 onChange={e => setCantidadInput(e.target.value)}
@@ -742,8 +742,8 @@ function PanelSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, onRet
               <button onClick={() => setEditandoCantidad(false)} style={{ background: 'none', color: '#6b7280', border: 'none', cursor: 'pointer' }}>✕</button>
             </div>
           ) : (
-            <span onClick={suc.estado !== 'finalizado' ? () => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(true) } : undefined}
-              style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.1rem', color: 'white', cursor: suc.estado !== 'finalizado' ? 'pointer' : 'default', borderBottom: suc.estado !== 'finalizado' ? '1px dashed #3b5bdb' : 'none' }}>
+            <span onClick={() => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(true) }}
+              style={{ fontFamily: "'Archivo Black', sans-serif", fontWeight: 700, fontSize: '1.1rem', color: 'white', cursor: 'pointer', borderBottom: '1px dashed ' + (suc.estado === 'finalizado' ? '#a16207' : '#3b5bdb') }}>
               {suc.cantidad}u
             </span>
           )}
@@ -893,7 +893,7 @@ function TarjetaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, car
           )}
 
           {/* Editar cantidad */}
-          {suc.estado !== 'finalizado' && (
+          {(
             editandoCantidad ? (
               <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.375rem' }}>
                 <input type="number" min="0" value={cantidadInput}
@@ -993,7 +993,7 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargan
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <span style={{ color: config.color, fontWeight: 600, fontSize: '0.875rem' }}>{config.label}</span>
           {/* Cantidad editable (solo si no está finalizado) */}
-          {suc.estado !== 'finalizado' && editandoCantidad ? (
+          {editandoCantidad ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
               <input
                 type="number" min="0"
@@ -1009,9 +1009,9 @@ function FilaSucursal({ suc, onAvanzar, onGuardarCajas, onEditarCantidad, cargan
             </div>
           ) : (
             <span
-              onClick={suc.estado !== 'finalizado' ? () => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(true) } : undefined}
-              title={suc.estado !== 'finalizado' ? 'Tocar para editar cantidad' : ''}
-              style={{ fontFamily: "'Archivo Black', sans-serif", color: '#ffffff', fontWeight: 700, fontSize: '1.1rem', cursor: suc.estado !== 'finalizado' ? 'pointer' : 'default', borderBottom: suc.estado !== 'finalizado' ? '1px dashed #3b5bdb' : 'none' }}
+              onClick={() => { setCantidadInput(String(suc.cantidad)); setEditandoCantidad(true) }}
+              title={suc.estado === 'finalizado' ? 'Corregir la cantidad despachada' : 'Tocar para editar cantidad'}
+              style={{ fontFamily: "'Archivo Black', sans-serif", color: '#ffffff', fontWeight: 700, fontSize: '1.1rem', cursor: 'pointer', borderBottom: '1px dashed ' + (suc.estado === 'finalizado' ? '#a16207' : '#3b5bdb') }}
             >
               {suc.cantidad}<span style={{ fontSize: '0.75rem', color: '#a0aec0', fontWeight: 400 }}> u</span>
             </span>
