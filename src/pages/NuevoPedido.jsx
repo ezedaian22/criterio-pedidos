@@ -378,6 +378,18 @@ function RevisarPedidos({ parseados, clientes, onEditar, onVolver, onConfirmar, 
       </div>
 
       {parseados.map(function(p, idx) {
+        // ── Controles de carga (solo avisan, no bloquean el guardado) ──
+        var artsCtrl = (p.data && p.data.articulos) || []
+        // 1) Modulos enteros: Sucati siempre pide multiplos del modulo del articulo.
+        //    Un total que no cierra es, casi siempre, una cantidad mal tipeada.
+        var noEnteros = artsCtrl.filter(function(a) {
+          var m = a.modulos && a.modulos[0] && a.modulos[0].unidades_por_caja
+          return m > 0 && a.total_unidades > 0 && (a.total_unidades % m !== 0)
+        })
+        // 2) Total declarado: la nota de pedido trae su propio total al pie.
+        var totalDeclarado = p.data && p.data.total_declarado
+        var totalLeido = artsCtrl.reduce(function(s, a) { return s + (a.total_unidades || 0) }, 0)
+        var descuadre = totalDeclarado && totalLeido !== totalDeclarado ? totalLeido - totalDeclarado : 0
         return (
           <div key={idx} className="card space-y-4">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -422,6 +434,27 @@ function RevisarPedidos({ parseados, clientes, onEditar, onVolver, onConfirmar, 
                   <label style={{ fontSize: '0.75rem', color: '#6b7280', display: 'block', marginBottom: '0.25rem' }}>Fecha de entrega</label>
                   <input type="date" className="input" style={{ width: 'auto' }} value={p.data && p.data.fecha_entrega || ''} onChange={e => editarFecha(idx, e.target.value)} />
                 </div>
+
+                {noEnteros.length > 0 && (
+                  <div style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: '0.5rem', padding: '0.625rem 0.75rem', color: '#fca5a5', fontSize: '0.8125rem' }}>
+                    <div style={{ fontWeight: 600 }}>⚠ {noEnteros.length === 1 ? 'Un artículo no cierra' : noEnteros.length + ' artículos no cierran'} en módulos enteros</div>
+                    {noEnteros.map(function(a, k) {
+                      var m = a.modulos[0].unidades_por_caja
+                      return (
+                        <div key={k} style={{ marginTop: '0.25rem' }}>
+                          · <b>{a.codigo_nuestro}</b>: {a.total_unidades} unidades ÷ módulo de {m} = {(a.total_unidades / m).toFixed(2)} módulos
+                        </div>
+                      )
+                    })}
+                    <div style={{ marginTop: '0.375rem' }}>Sucati pide siempre en módulos enteros. Revisá las cantidades en el archivo antes de guardar.</div>
+                  </div>
+                )}
+
+                {descuadre !== 0 && (
+                  <div style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: '0.5rem', padding: '0.625rem 0.75rem', color: '#fca5a5', fontSize: '0.8125rem' }}>
+                    ⚠ El archivo declara <b>{totalDeclarado}</b> unidades y se interpretaron <b>{totalLeido}</b> ({descuadre > 0 ? '+' : ''}{descuadre}). Revisá el archivo antes de guardar.
+                  </div>
+                )}
 
                 {/* Artículos */}
                 <div>

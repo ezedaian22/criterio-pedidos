@@ -844,6 +844,17 @@ function parsearModulosSucati(rowsMod, codigosPedido) {
   return out
 }
 
+// Sucati le agrega una "E" de estampado a algunos codigos (703E), pero es
+// redundante: el 703 ya es estampado de origen, y por eso existe el 703L en
+// simil lino. Regla del negocio: si la E es la UNICA letra del codigo, se saca
+// y queda solo el numero, este la E adelante o atras (703E y E703 -> 703).
+// Los codigos con L (703L, 718L) NO se tocan: ahi la letra si distingue.
+function sacarEDeEstampado(c) {
+  var s = String(c || '').trim().toUpperCase().replace(/\s+/g, '')
+  var m = s.match(/^E(\d{1,4})$/) || s.match(/^(\d{1,4})E$/)
+  return m ? m[1] : s
+}
+
 async function parsearSucatiXLS(archivo, supabaseClient) {
   // Usar arrayBuffer() nativo en lugar de FileReader para mayor compatibilidad
   try {
@@ -1529,6 +1540,10 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           var art = articulos[cod]
           art.sucursales = Object.values(art.sucursales)
             .sort(function(a,b){ return Number(a.nro_sucursal)-Number(b.nro_sucursal) })
+          // La E se saca RECIEN ACA: los modulos y las estampas se buscan en las
+          // otras hojas por el codigo original ("MODULO ART 703E X 40 UNIDADES"),
+          // asi que si se sacara antes dejarian de matchear.
+          art.codigo_nuestro = sacarEDeEstampado(art.codigo_nuestro)
           return art
         })
 
@@ -1545,8 +1560,36 @@ async function parsearSucatiXLS(archivo, supabaseClient) {
           ? 'SUCATI S.R.L. + CHANDAL S.R.L.'
           : tieneChandal ? 'CHANDAL S.R.L.' : 'SUCATI S.R.L.'
 
+        // Control: la nota de pedido trae su propio total de unidades al pie.
+        // Lo leemos tal cual para poder avisar si no coincide con lo interpretado.
+        // Solo lectura: no modifica ningun articulo ni ninguna cantidad.
+        var totalDeclarado = null
+        try {
+          var colUnid = -1
+          var filaEnc = rows[headerRowIdx] || []
+          for (var cu = 0; cu < filaEnc.length; cu++) {
+            if (String(filaEnc[cu] || '').trim().toLowerCase() === 'unid') { colUnid = cu; break }
+          }
+          if (colUnid >= 0) {
+            for (var ft = headerRowIdx + 1; ft < rows.length; ft++) {
+              var filaT = rows[ft]
+              if (!filaT) continue
+              var esFilaTotal = false
+              for (var ct = 0; ct < colUnid; ct++) {
+                if (String(filaT[ct] || '').trim().toUpperCase() === 'TOTAL') { esFilaTotal = true; break }
+              }
+              if (esFilaTotal) {
+                var vt = parseInt(filaT[colUnid])
+                if (!isNaN(vt) && vt > 0) totalDeclarado = vt
+                break
+              }
+            }
+          }
+        } catch(eTot) { totalDeclarado = null }
+
         return {
           articulos: resultado,
+          totalDeclarado: totalDeclarado,
           fechaPedido: fechaPedido,
           fechaEntregaDesde: fechaEntregaDesde,
           fechaEntregaHasta: fechaEntregaHasta,
@@ -1647,6 +1690,7 @@ export async function parsearArchivoPedido(archivo, clienteNombre, supabaseClien
           fecha_pedido: sucatiData.fechaPedido,
           fecha_entrega: sucatiData.fechaEntregaHasta || sucatiData.fechaEntregaDesde,
           razon_social: sucatiData.razonSocial,
+          total_declarado: sucatiData.totalDeclarado,
           articulos: sucatiData.articulos
         }
       } else {
