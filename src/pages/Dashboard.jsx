@@ -76,6 +76,7 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   const [busqueda, setBusqueda] = useState('')
   const [confirmarEliminar, setConfirmarEliminar] = useState(null)
   const [eliminando, setEliminando] = useState(false)
+  const [alertasAbiertas, setAlertasAbiertas] = useState(false)
 
   // Solo gerencia puede eliminar pedidos
   const esGerencia = session?.rol === 'gerencia'
@@ -136,13 +137,33 @@ export default function Dashboard({ session, onNuevoPedido, onVerPedido }) {
   })
 
   const alertas = pedidos.filter(p => p.estado === 'activo' && alertaFecha(p.fecha_entrega) !== 'ok')
+  const alertasVencidas = alertas.filter(p => alertaFecha(p.fecha_entrega) === 'vencido').length
+  const alertasProximas = alertas.length - alertasVencidas
 
   return (
     <div className="space-y-6">
       {/* Alertas */}
       {alertas.length > 0 && (
         <div className="space-y-2">
-          {alertas.map(p => {
+          <div onClick={() => setAlertasAbiertas(!alertasAbiertas)} style={{
+            borderRadius: '0.75rem', padding: '0.625rem 1rem', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: alertasVencidas > 0 ? '#1c0a0a' : '#1c1400',
+            border: '1px solid ' + (alertasVencidas > 0 ? '#b91c1c' : '#b45309'),
+            color: alertasVencidas > 0 ? '#fca5a5' : '#fcd34d'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.875rem', fontWeight: 600 }}>
+              <span>{alertasVencidas > 0 ? '🔴' : '🟡'}</span>
+              <span>
+                {alertasVencidas > 0 ? alertasVencidas + (alertasVencidas === 1 ? ' vencido' : ' vencidos') : ''}
+                {alertasVencidas > 0 && alertasProximas > 0 ? ' · ' : ''}
+                {alertasProximas > 0 ? alertasProximas + (alertasProximas === 1 ? ' próximo a vencer' : ' próximos a vencer') : ''}
+              </span>
+            </div>
+            <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{alertasAbiertas ? 'Ocultar ▲' : 'Ver ▼'}</span>
+          </div>
+
+          {alertasAbiertas && alertas.map(p => {
             const tipo = alertaFecha(p.fecha_entrega)
             return (
               <div key={p.id} onClick={() => onVerPedido(p)} style={{
