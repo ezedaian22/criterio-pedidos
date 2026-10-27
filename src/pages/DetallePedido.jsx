@@ -278,7 +278,10 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
     return na - nb
   })
   const suc0 = sucursales.find(s => s.es_entrega_final)
-  const todasNormalesOk = sucsNormales.length > 0 && sucsNormales.every(s => s.estado === 'finalizado')
+  // Sin el guard de longitud: cuando el pedido viene sin distribucion todo cae
+  // en la suc. 0 y no hay sucursales normales que esperar. [].every() da true,
+  // igual que en guardarCajas y en retrocederEstado.
+  const todasNormalesOk = sucsNormales.every(s => s.estado === 'finalizado')
   const finalizadasNormales = sucsNormales.filter(s => s.estado === 'finalizado').length
 
   async function avanzarEstado(suc) {
@@ -357,7 +360,14 @@ function ArmarArticulo({ articulo, pedido, onVolver, onActualizar, onExpandirFot
     try {
       const update = { estado: 'finalizado', nro_cajas: parseInt(nroCajas) || 0, fecha_finalizacion: new Date().toISOString().split('T')[0] }
       await supabase.from('pedido_sucursales').update(update).eq('id', suc0.id)
-      setSucursales(prev => prev.map(s => s.id === suc0.id ? { ...s, ...update } : s))
+      const nuevasSucs = sucursales.map(s => s.id === suc0.id ? { ...s, ...update } : s)
+      setSucursales(nuevasSucs)
+      // En un pedido sin distribucion la suc. 0 es la unica, asi que es la que
+      // cierra el articulo. Con distribucion ya viene cerrado por guardarCajas.
+      if (nuevasSucs.every(s => s.estado === 'finalizado') && articulo.estado !== 'finalizado') {
+        await supabase.from('pedido_articulos').update({ estado: 'finalizado', fecha_finalizacion: new Date().toISOString().split('T')[0] }).eq('id', articulo.id)
+        onActualizar()
+      }
     } catch (err) { console.error(err) }
     finally { setGuardando(null) }
   }
